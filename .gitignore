@@ -1,0 +1,7 @@
+*.pyc
+*.o
+*.d
+.cproject
+.project
+*tags
+/results

@@ -1,0 +1,76 @@
+CARBON_LIB = $(SIM_ROOT)/lib/libcarbon_sim.a
+
+DIRECTORIES = $(SIM_ROOT)/common/tile/        									\
+			 $(SIM_ROOT)/common/tile/memory_subsystem/							\
+          $(SIM_ROOT)/common/tile/memory_subsystem/cache/      			\
+			 $(SIM_ROOT)/common/tile/memory_subsystem/directory_schemes/	\
+			 $(SIM_ROOT)/common/tile/memory_subsystem/performance_models/	\
+			 $(SIM_ROOT)/common/tile/core/      									\
+			 $(SIM_ROOT)/common/tile/core/models/									\
+			 $(SIM_ROOT)/common/tile/core/branch_predictors/	            \
+          $(SIM_ROOT)/common/network/         									\
+			 $(SIM_ROOT)/common/network/models/	 									\
+			 $(SIM_ROOT)/common/network/components/router/						\
+			 $(SIM_ROOT)/common/network/components/link/							\
+          $(SIM_ROOT)/common/transport/       									\
+          $(SIM_ROOT)/common/misc/            									\
+          $(SIM_ROOT)/common/config/	      									\
+          $(SIM_ROOT)/common/system/          									\
+          $(SIM_ROOT)/common/system/clock_skew_management_schemes/		\
+			 $(SIM_ROOT)/common/shared_models/      								\
+          $(SIM_ROOT)/common/shared_models/queue_models/     				\
+          $(SIM_ROOT)/common/user/													\
+          $(SIM_ROOT)/common/mcpat/													\
+			 $(SIM_ROOT)/																	\
+			 $(CURDIR)/
+
+INCLUDE_DIRECTORIES = $(DIRECTORIES)												\
+							 $(SIM_ROOT)/contrib/mcpat									\
+							 $(SIM_ROOT)/contrib/mcpat/cacti
+
+CLEAN=$(findstring clean,$(MAKECMDGOALS))
+
+# Debug Graphite & Application: Set to 'true' to debug, 'false' not to debug
+DBG = false
+
+ifeq ($(DBG),true)
+	DBG_FLAGS = -ggdb
+	OPT_FLAGS = -O0
+else
+	OPT_FLAGS = -O2
+endif
+
+KERNEL = SQUEEZE
+#KERNEL = LENNY
+
+LD_FLAGS += -L$(SIM_ROOT)/lib
+LD_LIBS += -lcarbon_sim
+
+# Boost library
+BOOST_SUFFIX = mt
+LD_LIBS += -lboost_filesystem-$(BOOST_SUFFIX) -lboost_system-$(BOOST_SUFFIX)
+
+# Include paths
+CXXFLAGS += $(foreach dir,$(INCLUDE_DIRECTORIES),-I$(dir)) \
+            -Wall -Werror -Wno-deprecated-declarations -Wno-unknown-pragmas \
+			   $(DBG_FLAGS) $(OPT_FLAGS) -fPIC -DKERNEL_$(KERNEL)
+
+# Build rules for dependency generation
+%.d: %.cpp
+	$(CXX) -MM -MT $*.o -MF $@ $(CXXFLAGS) $<
+
+%.d: %.cc
+	$(CXX) -MM -MT $*.o -MF $@ $(CXXFLAGS) $<
+
+%.d: %.c
+	$(CC) -MM -MT $*.o -MF $@ $(CFLAGS) $<
+
+# Build rules for object generation
+%.o : %.cpp
+	$(CXX) -c $(CXXFLAGS) -o $@ $<
+	
+%.o : %.cc
+	$(CXX) -c $(CXXFLAGS) -o $@ $<
+	
+%.o : %.c
+	$(CC) -c $(CFLAGS) -o $@ $<

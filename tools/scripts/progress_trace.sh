@@ -1,0 +1,1 @@
+for i in $(find . -type d -not -name .) ; do echo $i ; cd $i && python ${GRAPHITE_HOME}/tools/scripts/progress_trace.py > data.m && math < ${GRAPHITE_HOME}/tools/scripts/progress_trace_envelope.m && cd .. ; done
