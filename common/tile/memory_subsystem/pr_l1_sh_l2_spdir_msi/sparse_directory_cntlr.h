@@ -23,7 +23,7 @@ namespace PrL1ShL2SpDirMSI
    {
    public:
       SparseDirectoryCntlr(MemoryManager* memory_manager,
-            DramCntlr* dram_cntlr,
+            L2CacheCntlr* l2_cntlr,
             string sparse_directory_total_entries_str,
             UInt32 sparse_directory_associativity,
             UInt32 cache_block_size,
@@ -31,10 +31,10 @@ namespace PrL1ShL2SpDirMSI
             UInt32 sparse_directory_max_hw_sharers,
             string sparse_directory_type_str,
             string sparse_directory_access_cycles_str,
-            UInt32 num_dram_cntlrs);
+            UInt32 num_dir_cntlrs);
       ~SparseDirectoryCntlr();
 
-      void handleMsgFromL2Cache(tile_id_t sender, ShmemMsg* shmem_msg);
+      void handleMsgFromL1Cache(tile_id_t sender, ShmemMsg* shmem_msg);
 
       DirectoryCache* getSparseDirectoryCache() { return _sparse_directory_cache; }
    
@@ -42,7 +42,7 @@ namespace PrL1ShL2SpDirMSI
       // Functional Models
       MemoryManager* _memory_manager;
       DirectoryCache* _sparse_directory_cache;
-      DramCntlr* _dram_cntlr;
+      L2CacheCntlr* _l2_cntlr;
       HashMapList<IntPtr,ShmemReq*> _sparse_directory_req_queue;
 
       UInt32 getCacheLineSize();
@@ -52,14 +52,14 @@ namespace PrL1ShL2SpDirMSI
       DirectoryEntry* processDirectoryEntryAllocationReq(ShmemReq* shmem_req);
       void processNullifyReq(ShmemReq* shmem_req);
 
-      void processNextReqFromL2Cache(IntPtr address);
-      void processExReqFromL2Cache(ShmemReq* shmem_req, Byte* cached_data_buf = NULL);
-      void processShReqFromL2Cache(ShmemReq* shmem_req, Byte* cached_data_buf = NULL);
-      void retrieveDataAndSendToL2Cache(ShmemMsg::Type reply_msg_type, tile_id_t receiver, IntPtr address, Byte* cached_data_buf, bool msg_modeled);
+      void processNextReqFromL1Cache(IntPtr address);
+      void processExReqFromL1Cache(ShmemReq* shmem_req, Byte* cached_data_buf = NULL);
+      void processShReqFromL1Cache(ShmemReq* shmem_req, Byte* cached_data_buf = NULL);
+      void retrieveDataAndSendToL1Cache(ShmemMsg::Type reply_msg_type, tile_id_t receiver, IntPtr address, Byte* cached_data_buf, bool msg_modeled);
 
-      void processInvRepFromL2Cache(tile_id_t sender, ShmemMsg* shmem_msg);
-      void processFlushRepFromL2Cache(tile_id_t sender, ShmemMsg* shmem_msg);
-      void processWbRepFromL2Cache(tile_id_t sender, ShmemMsg* shmem_msg);
-      void sendDataToDram(IntPtr address, Byte* data_buf, bool msg_modeled);
+      void processInvRepFromL1Cache(tile_id_t sender, ShmemMsg* shmem_msg);
+      void processFlushRepFromL1Cache(tile_id_t sender, ShmemMsg* shmem_msg);
+      void processWbRepFromL1Cache(tile_id_t sender, ShmemMsg* shmem_msg);
+      void sendDataToL2(IntPtr address, Byte* data_buf, bool msg_modeled);
    };
 }

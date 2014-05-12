@@ -6,7 +6,7 @@
 namespace PrL1ShL2SpDirMSI
 {
 
-class L2DirectoryCfg
+class SparseDirectoryCfg
 {
 public:
    static DirectoryType getDirectoryType()   { return _directory_type; }

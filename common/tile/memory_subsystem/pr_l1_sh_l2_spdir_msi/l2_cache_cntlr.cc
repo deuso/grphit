@@ -1,8 +1,9 @@
 #include "l2_cache_cntlr.h"
 #include "memory_manager.h"
 #include "directory_type.h"
-#include "l2_directory_cfg.h"
+#include "sparse_directory_cfg.h"
 #include "directory_entry.h"
+#include "directory_cache.h"
 #include "l2_cache_replacement_policy.h"
 #include "l2_cache_hash_fn.h"
 #include "config.h"
@@ -34,7 +35,7 @@ L2CacheCntlr::L2CacheCntlr(MemoryManager* memory_manager,
 
    // L2 cache
    _L2_cache = new Cache("L2",
-         PR_L1_SH_L2_MSI,
+         PR_L1_SH_L2_SPDIR_MSI,
          Cache::UNIFIED_CACHE,
          L2,
          Cache::WRITE_BACK,
@@ -49,6 +50,18 @@ L2CacheCntlr::L2CacheCntlr(MemoryManager* memory_manager,
          L2_cache_perf_model_type,
          L2_cache_track_miss_types,
          getShmemPerfModel());
+
+   _sp_dir = new DirectoryCache(_memory_manager->getTile(),
+                PR_L1_SH_L2_SPDIR_MSI,
+                sparse_directory_type_str,
+                sparse_directory_total_entries_str,
+                sparse_directory_associativity,
+                cache_line_size,
+                sparse_directory_max_hw_sharers,
+                sparse_directory_max_num_sharers,
+                num_dir_cntlrs,
+                sparse_directory_access_cycles_str,
+                getShmemPerfModel());
 }
 
 L2CacheCntlr::~L2CacheCntlr()
@@ -207,6 +220,11 @@ L2CacheCntlr::handleMsgFromL1Cache(tile_id_t sender, ShmemMsg* shmem_msg)
    Time msg_time = getShmemPerfModel()->getCurrTime();
    IntPtr address = shmem_msg->getAddress();
    
+   //TODO:access sp-dir and l2cache
+   //a) sp-dir hit, l2 hit: handle by sp-dir
+   //b) sp-dir miss, l2 hit: alloc sp-dir(may gen eviction of sp-dir,data wb to l2), get data from l2
+   //c) sp-dir miss, l2 miss: alloc sp-dir and l2(both may gen eviction)
+   //d) sp-dir hit, l2 miss: wb/wbinv by sp-dir(supported in NI/NE cache)
    if ( (shmem_msg_type == ShmemMsg::EX_REQ) || (shmem_msg_type == ShmemMsg::SH_REQ) )
    {
       // Add request onto a queue

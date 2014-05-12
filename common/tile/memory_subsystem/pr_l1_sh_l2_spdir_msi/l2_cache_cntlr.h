@@ -56,6 +56,7 @@ namespace PrL1ShL2SpDirMSI
       // Data Members
       MemoryManager* _memory_manager;
       Cache* _L2_cache;
+      SparseDirectoryCntlr* _sp_dir;
       CacheReplacementPolicy* _L2_cache_replacement_policy_obj;
       CacheHashFn* _L2_cache_hash_fn_obj;
       AddressHomeLookup* _dram_home_lookup;

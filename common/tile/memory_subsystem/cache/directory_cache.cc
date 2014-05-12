@@ -248,6 +248,7 @@ DirectoryCache::computeDirectoryTotalEntries()
    UInt32 total_entries;
    if (_total_entries_str == "auto")
    {
+       //over-provisioning ration 2.0 zl
       UInt32 max_L2_cache_size = getMaxL2CacheSize();  // In KB
       UInt32 num_sets = (UInt32) ceil(2.0 * max_L2_cache_size * 1024 * num_application_tiles /
                                       (_cache_line_size * _associativity * _num_directory_slices));
