@@ -23,7 +23,6 @@ namespace PrL1ShL2SpDirMSI
    {
    public:
       SparseDirectoryCntlr(MemoryManager* memory_manager,
-            L2CacheCntlr* l2_cntlr,
             string sparse_directory_total_entries_str,
             UInt32 sparse_directory_associativity,
             UInt32 cache_block_size,
@@ -42,7 +41,8 @@ namespace PrL1ShL2SpDirMSI
       // Functional Models
       MemoryManager* _memory_manager;
       DirectoryCache* _sparse_directory_cache;
-      L2CacheCntlr* _l2_cntlr;
+      Cache* _L2_cache;
+
       HashMapList<IntPtr,ShmemReq*> _sparse_directory_req_queue;
 
       UInt32 getCacheLineSize();

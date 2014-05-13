@@ -36,6 +36,9 @@ L2CacheReplacementPolicy::getReplacementWay(CacheLineInfo** cache_line_info_arra
       {
          IntPtr address = getAddressFromTag(L2_cache_line_info->getTag());
 
+         //TODO: access the sp-dir 
+         //1.valid but not shared
+         //2.valid with least sharing count(Coordinate with sp-dir eviction)
          DirectoryEntry* directory_entry = L2_cache_line_info->getDirectoryEntry();
          if (directory_entry->getNumSharers() < min_num_sharers && 
              _L2_cache_req_list.empty(address))

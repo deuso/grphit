@@ -8,7 +8,6 @@ namespace PrL1PrL1SpDirMSI
 {
 
 SparseDirectoryCntlr::SparseDirectoryCntlr(MemoryManager* memory_manager,
-            L2CacheCntlr* l2_cntlr,
             string sparse_directory_total_entries_str,
             UInt32 sparse_directory_associativity,
             UInt32 cache_line_size,
@@ -18,7 +17,7 @@ SparseDirectoryCntlr::SparseDirectoryCntlr(MemoryManager* memory_manager,
             string sparse_directory_access_cycles_str,
             UInt32 num_dir_cntlrs)
     : _memory_manager(memory_manager)
-      , _l2_cntlr(l2_cntlr)
+      , _dram_cntlr(dram_cntlr)
 {
     _sparse_directory_cache = new DirectoryCache(_memory_manager->getTile(),
                 PR_L1_SH_L1_SPDIR_MSI,
@@ -31,6 +30,24 @@ SparseDirectoryCntlr::SparseDirectoryCntlr(MemoryManager* memory_manager,
                 num_dir_cntlrs,
                 sparse_directory_access_cycles_str,
                 getShmemPerfModel());
+
+   // L2 cache
+   _L2_cache = new Cache("L2",
+         PR_L1_SH_L2_SPDIR_MSI,
+         Cache::UNIFIED_CACHE,
+         L2,
+         Cache::WRITE_BACK,
+         L2_cache_size, 
+         L2_cache_associativity, 
+         cache_line_size,
+         L2_cache_num_banks,
+         _L2_cache_replacement_policy_obj,
+         _L2_cache_hash_fn_obj,
+         L2_cache_data_access_cycles,
+         L2_cache_tags_access_cycles,
+         L2_cache_perf_model_type,
+         L2_cache_track_miss_types,
+         getShmemPerfModel());
 
     LOG_PRINT("Instantiated Sparse Directory Cache");
 }
@@ -155,7 +172,7 @@ DirectoryEntry* SparseDirectoryCntlr::processDirectoryEntryAllocationReq(ShmemRe
 
     // The NULLIFY requests are always modeled in the network
     bool msg_modeled = true;
-    ShmemMsg nullify_msg(ShmemMsg::NULLIFY_REQ, MemComponent::DRAM_DIRECTORY, MemComponent::DRAM_DIRECTORY, requester, replaced_address, msg_modeled);
+    ShmemMsg nullify_msg(ShmemMsg::NULLIFY_REQ, MemComponent::SP_DIRECTORY, MemComponent::SP_DIRECTORY, requester, replaced_address, msg_modeled);
 
     ShmemReq* nullify_req = new ShmemReq(&nullify_msg, msg_time);
     _sparse_directory_req_queue.enqueue(replaced_address, nullify_req);
