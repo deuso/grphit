@@ -8,9 +8,10 @@ namespace PrL1ShL2SpDirMSI
 {
 
 L2CacheReplacementPolicy::L2CacheReplacementPolicy(UInt32 cache_size, UInt32 associativity, UInt32 cache_line_size,
-                                                   HashMapList<IntPtr,ShmemReq*>& L2_cache_req_list)
+                                                   HashMapList<IntPtr,ShmemReq*>& L2_cache_req_list, SparseDirectoryCntlr* sp_dir)
    : CacheReplacementPolicy(cache_size, associativity, cache_line_size)
    , _L2_cache_req_list(L2_cache_req_list)
+   , _sp_dir(sp_dir)
 {
    _log_cache_line_size = floorLog2(cache_line_size);
 }
@@ -32,20 +33,26 @@ L2CacheReplacementPolicy::getReplacementWay(CacheLineInfo** cache_line_info_arra
       {
          return i;
       }
-      else
+      else if(L2_cache_line_info->getSpDir())
       {
          IntPtr address = getAddressFromTag(L2_cache_line_info->getTag());
 
          //TODO: access the sp-dir 
          //1.valid but not shared
          //2.valid with least sharing count(Coordinate with sp-dir eviction)
-         DirectoryEntry* directory_entry = L2_cache_line_info->getDirectoryEntry();
+         //DirectoryEntry* directory_entry = L2_cache_line_info->getDirectoryEntry();
+         DirectoryEntry* directory_entry = _sp_dir->getSparseDirectoryCache()->getDirectoryEntry(address);
          if (directory_entry->getNumSharers() < min_num_sharers && 
              _L2_cache_req_list.empty(address))
          {
             min_num_sharers = directory_entry->getNumSharers();
             way = i;
          }
+      } 
+      else
+      {
+            min_num_sharers = 0;
+            way = i;
       }
    }
 
@@ -56,7 +63,7 @@ L2CacheReplacementPolicy::getReplacementWay(CacheLineInfo** cache_line_info_arra
          ShL2CacheLineInfo* L2_cache_line_info = dynamic_cast<ShL2CacheLineInfo*>(cache_line_info_array[i]);
          assert(L2_cache_line_info->getCState() != CacheState::INVALID);
          IntPtr address = getAddressFromTag(L2_cache_line_info->getTag());
-         DirectoryEntry* directory_entry = L2_cache_line_info->getDirectoryEntry();
+         DirectoryEntry* directory_entry = _sp_dir->getSparseDirectoryCache()->getDirectoryEntry(address);
          assert(_L2_cache_req_list.count(address) > 0);
          fprintf(stderr, "i(%u), Address(%#lx), CState(%u), DState(%u), Num Waiters(%u)\n",
                  i, address, L2_cache_line_info->getCState(),

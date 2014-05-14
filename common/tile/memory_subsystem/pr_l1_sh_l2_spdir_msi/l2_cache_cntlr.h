@@ -21,6 +21,7 @@ using std::map;
 #include "shmem_perf_model.h"
 #include "cache_replacement_policy.h"
 #include "cache_hash_fn.h"
+#include "sparse_directory_cntlr.h"
 
 namespace PrL1ShL2SpDirMSI
 {
@@ -29,6 +30,7 @@ namespace PrL1ShL2SpDirMSI
    public:
       L2CacheCntlr(MemoryManager* memory_manager,
                    AddressHomeLookup* dram_home_lookup,
+                   SparseDirectoryCntlr* sp_dir,
                    UInt32 cache_line_size,
                    UInt32 L2_cache_size,
                    UInt32 L2_cache_associativity,

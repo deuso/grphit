@@ -2,7 +2,6 @@
 #include "cache.h"
 #include "simulator.h"
 #include "tile_manager.h"
-#include "l2_directory_cfg.h"
 #include "network.h"
 #include "log.h"
 
@@ -49,9 +48,17 @@ MemoryManager::MemoryManager(Tile* tile)
    bool L2_cache_track_miss_types = false;
    
    // L2 Directory
-   SInt32 L2_directory_max_num_sharers = 0;
-   SInt32 L2_directory_max_hw_sharers = 0;
-   std::string L2_directory_type_str;
+   //SInt32 L2_directory_max_num_sharers = 0;
+   //SInt32 L2_directory_max_hw_sharers = 0;
+   //std::string L2_directory_type_str;
+
+   // Dram Directory Cache
+   std::string sparse_directory_total_entries_str;
+   UInt32 sparse_directory_associativity = 0;
+   UInt32 sparse_directory_max_num_sharers = 0;
+   UInt32 sparse_directory_max_hw_sharers = 0;
+   std::string sparse_directory_type_str;
+   std::string sparse_directory_access_cycles_str;
    
    // Dram
    float dram_latency = 0.0;
@@ -98,9 +105,16 @@ MemoryManager::MemoryManager(Tile* tile)
       L2_cache_track_miss_types = Sim()->getCfg()->getBool(L2_cache_type + "/track_miss_types");
 
       // Directory
-      L2_directory_max_num_sharers = Sim()->getConfig()->getTotalTiles();
-      L2_directory_max_hw_sharers = Sim()->getCfg()->getInt("l2_directory/max_hw_sharers");
-      L2_directory_type_str = Sim()->getCfg()->getString("l2_directory/directory_type");
+      //L2_directory_max_num_sharers = Sim()->getConfig()->getTotalTiles();
+      //L2_directory_max_hw_sharers = Sim()->getCfg()->getInt("l2_directory/max_hw_sharers");
+      //L2_directory_type_str = Sim()->getCfg()->getString("l2_directory/directory_type");
+      // Dram Directory Cache
+      sparse_directory_total_entries_str = Sim()->getCfg()->getString("sparse_directory/total_entries");
+      sparse_directory_associativity = Sim()->getCfg()->getInt("sparse_directory/associativity");
+      sparse_directory_max_num_sharers = Sim()->getConfig()->getTotalTiles();
+      sparse_directory_max_hw_sharers = Sim()->getCfg()->getInt("sparse_directory/max_hw_sharers");
+      sparse_directory_type_str = Sim()->getCfg()->getString("sparse_directory/directory_type");
+      sparse_directory_access_cycles_str = Sim()->getCfg()->getString("sparse_directory/access_time");
 
       // Dram Cntlr
       dram_latency = Sim()->getCfg()->getFloat("dram/latency");
@@ -144,12 +158,22 @@ MemoryManager::MemoryManager(Tile* tile)
             getCacheLineSize());
    }
    
+   UInt32 num_memory_controllers = tile_list_with_dram_controllers.size();
    //TODO:sparse dir here==================
+   _sp_dir= new SparseDirectoryCntlr(this,
+         sparse_directory_total_entries_str,
+         sparse_directory_associativity,
+         getCacheLineSize(),
+         sparse_directory_max_num_sharers,
+         sparse_directory_max_hw_sharers,
+         sparse_directory_type_str,
+         sparse_directory_access_cycles_str,
+         num_memory_controllers);
    
    // Set L2 directory params
-   L2DirectoryCfg::setDirectoryType(DirectoryEntry::parseDirectoryType(L2_directory_type_str));
-   L2DirectoryCfg::setMaxHWSharers(L2_directory_max_hw_sharers);
-   L2DirectoryCfg::setMaxNumSharers(L2_directory_max_num_sharers);
+   //L2DirectoryCfg::setDirectoryType(DirectoryEntry::parseDirectoryType(L2_directory_type_str));
+   //L2DirectoryCfg::setMaxHWSharers(L2_directory_max_hw_sharers);
+   //L2DirectoryCfg::setMaxNumSharers(L2_directory_max_num_sharers);
 
    // Instantiate L1 cache cntlr
    _L1_cache_cntlr = new L1CacheCntlr(this,
@@ -176,6 +200,7 @@ MemoryManager::MemoryManager(Tile* tile)
    // TODO:add sparse dir param
    _L2_cache_cntlr = new L2CacheCntlr(this,
          _dram_home_lookup,
+         _sp_dir,
          getCacheLineSize(),
          L2_cache_size,
          L2_cache_associativity,
@@ -201,6 +226,7 @@ MemoryManager::~MemoryManager()
       delete _dram_cntlr;
    }
    //TODO:delete sparse dir
+   delete _sp_dir;
 }
 
 bool
@@ -255,12 +281,26 @@ MemoryManager::handleMsgFromNetwork(NetPacket& packet)
    case MemComponent::L2_CACHE:
       switch(sender_mem_component)
       {
-      case MemComponent::L1_ICACHE:
-      case MemComponent::L1_DCACHE:
-         _L2_cache_cntlr->handleMsgFromL1Cache(sender.tile_id, shmem_msg);
+      case MemComponent::SP_DIRECTORY:
+         _L2_cache_cntlr->handleMsgFromSpDir(sender.tile_id, shmem_msg);
          break;
       case MemComponent::DRAM_CNTLR:
          _L2_cache_cntlr->handleMsgFromDram(sender.tile_id, shmem_msg);
+         break;
+      default:
+         LOG_PRINT_ERROR("Unrecognized sender component(%u)", sender_mem_component);
+         break;
+      }
+      break;
+   case MemComponent::SP_DIRECTORY:
+      switch(sender_mem_component)
+      {
+      case MemComponent::L1_ICACHE:
+      case MemComponent::L1_DCACHE:
+         _sp_dir->handleMsgFromL1Cache(sender.tile_id, shmem_msg);
+         break;
+      case MemComponent::L2_CACHE:
+         _sp_dir->handleMsgFromL2Cache(sender.tile_id, shmem_msg);
          break;
       default:
          LOG_PRINT_ERROR("Unrecognized sender component(%u)", sender_mem_component);

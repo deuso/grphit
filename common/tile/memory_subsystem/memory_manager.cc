@@ -44,7 +44,7 @@ MemoryManager::createMMU(std::string protocol_type, Tile* tile)
       return new PrL1ShL2MSI::MemoryManager(tile);
 
    case PR_L1_SH_L2_SPDIR_MSI:
-      return new PrL1ShL2SPDIRMSI::MemoryManager(tile);
+      return new PrL1ShL2SpDirMSI::MemoryManager(tile);
 
    default:
       LOG_PRINT_ERROR("Unsupported Caching Protocol (%u)", _caching_protocol_type);

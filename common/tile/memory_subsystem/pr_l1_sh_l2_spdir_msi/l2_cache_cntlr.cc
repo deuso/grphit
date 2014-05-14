@@ -1,7 +1,6 @@
 #include "l2_cache_cntlr.h"
 #include "memory_manager.h"
 #include "directory_type.h"
-#include "sparse_directory_cfg.h"
 #include "directory_entry.h"
 #include "directory_cache.h"
 #include "l2_cache_replacement_policy.h"
@@ -16,6 +15,7 @@ namespace PrL1ShL2SpDirMSI
 
 L2CacheCntlr::L2CacheCntlr(MemoryManager* memory_manager,
                            AddressHomeLookup* dram_home_lookup,
+                           SparseDirectoryCntlr* sp_dir,
                            UInt32 cache_line_size,
                            UInt32 L2_cache_size,
                            UInt32 L2_cache_associativity,
@@ -26,11 +26,12 @@ L2CacheCntlr::L2CacheCntlr(MemoryManager* memory_manager,
                            string L2_cache_perf_model_type,
                            bool L2_cache_track_miss_types)
    : _memory_manager(memory_manager)
+   , _sp_dir(sp_dir)
    , _dram_home_lookup(dram_home_lookup)
    , _enabled(false)
 {
    _L2_cache_replacement_policy_obj =
-      new L2CacheReplacementPolicy(L2_cache_size, L2_cache_associativity, cache_line_size, _L2_cache_req_queue);
+      new L2CacheReplacementPolicy(L2_cache_size, L2_cache_associativity, cache_line_size, _L2_cache_req_queue, _sp_dir);
    _L2_cache_hash_fn_obj = new L2CacheHashFn(L2_cache_size, L2_cache_associativity, cache_line_size);
 
    // L2 cache
@@ -51,17 +52,6 @@ L2CacheCntlr::L2CacheCntlr(MemoryManager* memory_manager,
          L2_cache_track_miss_types,
          getShmemPerfModel());
 
-   _sp_dir = new DirectoryCache(_memory_manager->getTile(),
-                PR_L1_SH_L2_SPDIR_MSI,
-                sparse_directory_type_str,
-                sparse_directory_total_entries_str,
-                sparse_directory_associativity,
-                cache_line_size,
-                sparse_directory_max_hw_sharers,
-                sparse_directory_max_num_sharers,
-                num_dir_cntlrs,
-                sparse_directory_access_cycles_str,
-                getShmemPerfModel());
 }
 
 L2CacheCntlr::~L2CacheCntlr()
@@ -74,6 +64,7 @@ L2CacheCntlr::~L2CacheCntlr()
    delete _L2_cache_hash_fn_obj;
 }
 
+#if 0
 void
 L2CacheCntlr::probeCacheSet(IntPtr address, bool *miss, ShL2CacheLineInfo* L2_cache_line_info, ShmemMsg::Type shmem_msg_type)
 {
@@ -97,6 +88,7 @@ L2CacheCntlr::probeCacheSet(IntPtr address, bool *miss, ShL2CacheLineInfo* L2_ca
       }
    }
 }
+#endif
 
 //TODO:access sp-dir in the same time, issue back invalidations while dir entry conflicts
 //L2_cache_line_info cstate will be invalid if miss
@@ -366,7 +358,7 @@ L2CacheCntlr::processShmemReq(ShmemReq* shmem_req)
    // Process the request
    switch (msg_type)
    {
-      case ShmemMsg::SPDIR_RD_REQ
+      case ShmemMsg::SPDIR_RD_REQ:
       processReqFromSpDir(shmem_req, NULL, true);
       break;
    default:
@@ -404,7 +396,7 @@ L2CacheCntlr::processNullifyReq(ShmemReq* nullify_req, Byte* data_buf)
       ShmemMsg shmem_msg(ShmemMsg::L2_SPDIR_REQ, MemComponent::L2_CACHE, MemComponent::SP_DIRECTORY,
                          requester, false, address,
                          msg_modeled);
-      _memory_manager->sendMsg(directory_entry->getOwner(), shmem_msg);
+      _memory_manager->sendMsg(getTileId(), shmem_msg);
    }
    else
    {
@@ -517,13 +509,13 @@ L2CacheCntlr::restartShmemReq(ShmemReq* shmem_req, ShL2CacheLineInfo* L2_cache_l
    switch (msg_type)
    {
    case ShmemMsg::SPDIR_RD_REQ:
-      if (curr_dstate == DirectoryState::UNCACHED)
+      //if (curr_dstate == DirectoryState::UNCACHED)
          processReqFromSpDir(shmem_req, data_buf);
       break;
 
 
    case ShmemMsg::NULLIFY_REQ:
-      if (curr_dstate == DirectoryState::UNCACHED)
+      //if (curr_dstate == DirectoryState::UNCACHED)
          processNullifyReq(shmem_req, data_buf);
       break;
 

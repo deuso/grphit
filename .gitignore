@@ -6,3 +6,5 @@
 *tags
 /results
 *.swp
+*.so
+*.a

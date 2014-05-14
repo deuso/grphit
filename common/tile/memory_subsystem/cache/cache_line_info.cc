@@ -28,7 +28,7 @@ CacheLineInfo::create(CachingProtocolType caching_protocol_type, SInt32 cache_le
       return PrL1ShL2MSI::createCacheLineInfo(cache_level);
 
    case PR_L1_SH_L2_SPDIR_MSI:
-      return PrL1ShL2SPDIRMSI::createCacheLineInfo(cache_level);
+      return PrL1ShL2SpDirMSI::createCacheLineInfo(cache_level);
 
    default:
       LOG_PRINT_ERROR("Unrecognized caching protocol type(%u)", caching_protocol_type);

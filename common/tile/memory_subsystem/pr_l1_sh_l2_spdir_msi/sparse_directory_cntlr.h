@@ -11,7 +11,6 @@ namespace PrL1ShL2SpDirMSI
 
 #include "directory_cache.h"
 #include "hash_map_list.h"
-#include "dram_cntlr.h"
 #include "address_home_lookup.h"
 #include "shmem_req.h"
 #include "shmem_msg.h"
@@ -34,6 +33,7 @@ namespace PrL1ShL2SpDirMSI
       ~SparseDirectoryCntlr();
 
       void handleMsgFromL1Cache(tile_id_t sender, ShmemMsg* shmem_msg);
+      void handleMsgFromL2Cache(tile_id_t sender, ShmemMsg* shmem_msg);
 
       DirectoryCache* getSparseDirectoryCache() { return _sparse_directory_cache; }
    
@@ -41,7 +41,6 @@ namespace PrL1ShL2SpDirMSI
       // Functional Models
       MemoryManager* _memory_manager;
       DirectoryCache* _sparse_directory_cache;
-      Cache* _L2_cache;
 
       HashMapList<IntPtr,ShmemReq*> _sparse_directory_req_queue;
 
@@ -55,11 +54,12 @@ namespace PrL1ShL2SpDirMSI
       void processNextReqFromL1Cache(IntPtr address);
       void processExReqFromL1Cache(ShmemReq* shmem_req, Byte* cached_data_buf = NULL);
       void processShReqFromL1Cache(ShmemReq* shmem_req, Byte* cached_data_buf = NULL);
-      void retrieveDataAndSendToL1Cache(ShmemMsg::Type reply_msg_type, tile_id_t receiver, IntPtr address, Byte* cached_data_buf, bool msg_modeled);
+      void retrieveDataAndSendToL1Cache(ShmemMsg::Type reply_msg_type, tile_id_t receiver, MemComponent::Type receiver_type, IntPtr address, Byte* cached_data_buf, bool msg_modeled);
 
       void processInvRepFromL1Cache(tile_id_t sender, ShmemMsg* shmem_msg);
       void processFlushRepFromL1Cache(tile_id_t sender, ShmemMsg* shmem_msg);
       void processWbRepFromL1Cache(tile_id_t sender, ShmemMsg* shmem_msg);
       void sendDataToL2(IntPtr address, Byte* data_buf, bool msg_modeled);
+      void getDataFromL2(IntPtr address, Byte* data_buf, bool msg_modeled);
    };
 }
