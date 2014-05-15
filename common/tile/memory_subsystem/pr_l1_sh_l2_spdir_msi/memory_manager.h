@@ -32,6 +32,7 @@ namespace PrL1ShL2SpDirMSI
       Cache* getL1ICache() { return _L1_cache_cntlr->getL1ICache(); }
       Cache* getL1DCache() { return _L1_cache_cntlr->getL1DCache(); }
       Cache* getL2Cache() { return _L2_cache_cntlr->getL2Cache(); }
+      DirectoryCache* getSparseDirectoryCache() { return _sp_dir->getSparseDirectoryCache(); }
       DramCntlr* getDramCntlr() { return _dram_cntlr; }
       bool isDramCntlrPresent() { return _dram_cntlr_present; }
       
@@ -70,7 +71,7 @@ namespace PrL1ShL2SpDirMSI
       bool _dram_cntlr_present;
 
       // Home Lookups
-      AddressHomeLookup* _L2_cache_home_lookup;
+      AddressHomeLookup* _SpDir_home_lookup;
       AddressHomeLookup* _dram_home_lookup;
 
       UInt32 _cache_line_size;

@@ -248,13 +248,22 @@ DirectoryCache::computeDirectoryTotalEntries()
    UInt32 total_entries;
    if (_total_entries_str == "auto")
    {
-       //over-provisioning ration 2.0 zl
       UInt32 max_L2_cache_size = getMaxL2CacheSize();  // In KB
       UInt32 num_sets = (UInt32) ceil(2.0 * max_L2_cache_size * 1024 * num_application_tiles /
                                       (_cache_line_size * _associativity * _num_directory_slices));
       // Round-off to the nearest power of 2
       num_sets = 1 << ceilLog2(num_sets);
       total_entries = num_sets * _associativity;
+   } else if (_total_entries_str == "spdir")
+   {
+       //over-provisioning ration 2.0 zl
+      UInt32 max_L1_cache_size = getMaxL1CacheSize();  // In KB i+d cache
+      UInt32 num_sets = (UInt32) ceil(2.0 * max_L1_cache_size * 1024 * num_application_tiles /
+                                      (_cache_line_size * _associativity * _num_directory_slices));
+      // Round-off to the nearest power of 2
+      num_sets = 1 << ceilLog2(num_sets);
+      total_entries = num_sets * _associativity;
+      //LOG_PRINT_WARNING("Sparse Directory slice entry count: %d, slice count: %d.",total_entries, _num_directory_slices);
    }
    else // (_total_entries_str != "auto")
    {
@@ -263,6 +272,33 @@ DirectoryCache::computeDirectoryTotalEntries()
    }
 
    return total_entries;
+}
+
+UInt32
+DirectoryCache::getMaxL1CacheSize()  // In KB
+{
+   UInt32 max_cache_size = 0;
+   Config* cfg = Config::getSingleton();
+   for (tile_id_t i = 0; i < (tile_id_t) cfg->getApplicationTiles(); i++)
+   {
+      string itype = cfg->getL1ICacheType(i);
+      string dtype = cfg->getL1ICacheType(i);
+      
+      UInt32 cache_size = 0;
+      try
+      {
+         cache_size = Sim()->getCfg()->getInt("l1_icache/" + itype + "/cache_size");
+         cache_size += Sim()->getCfg()->getInt("l1_dcache/" + dtype + "/cache_size");
+      }
+      catch (...)
+      {
+         LOG_PRINT_ERROR("Could not parse [l1_icache/%s/cache_size] or [l1_dcache/%s/cache_size] from cfg file", itype.c_str(), dtype.c_str());
+      }
+
+      if (cache_size > max_cache_size)
+         max_cache_size = cache_size;      
+   }
+   return max_cache_size;
 }
 
 UInt32

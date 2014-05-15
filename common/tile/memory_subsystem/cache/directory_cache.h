@@ -95,6 +95,8 @@ private:
 
    // Auto(-matically) determine total number of entries in the directory
    UInt32 computeDirectoryTotalEntries();
+   // Get the max L1 (i+d)cache size (in KB)
+   UInt32 getMaxL1CacheSize();
    // Get the max L2 cache size (in KB)
    UInt32 getMaxL2CacheSize();
    // Auto(-matically) determine directory access time

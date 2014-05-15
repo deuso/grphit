@@ -139,11 +139,11 @@ MemoryManager::MemoryManager(Tile* tile)
    std::vector<tile_id_t> tile_list_with_dram_controllers = getTileListWithMemoryControllers();
    _dram_home_lookup = new AddressHomeLookup(dram_home_lookup_param, tile_list_with_dram_controllers, getCacheLineSize());
    
-   UInt32 L2_cache_home_lookup_param = ceilLog2(_cache_line_size);
+   UInt32 SpDir_home_lookup_param = ceilLog2(_cache_line_size);
    std::vector<tile_id_t> tile_list;
    for (tile_id_t i = 0; i < (tile_id_t) Config::getSingleton()->getApplicationTiles(); i++)
       tile_list.push_back(i);
-   _L2_cache_home_lookup = new AddressHomeLookup(L2_cache_home_lookup_param, tile_list, getCacheLineSize());
+   _SpDir_home_lookup = new AddressHomeLookup(SpDir_home_lookup_param, tile_list, getCacheLineSize());
 
    if (find(tile_list_with_dram_controllers.begin(), tile_list_with_dram_controllers.end(), getTile()->getId())
          != tile_list_with_dram_controllers.end())
@@ -158,8 +158,10 @@ MemoryManager::MemoryManager(Tile* tile)
             getCacheLineSize());
    }
    
-   UInt32 num_memory_controllers = tile_list_with_dram_controllers.size();
-   //TODO:sparse dir here==================
+   //UInt32 num_memory_controllers = tile_list_with_dram_controllers.size();
+   UInt32 num_spdir_controllers = tile_list.size();
+   
+   //sparse dir here==================
    _sp_dir= new SparseDirectoryCntlr(this,
          sparse_directory_total_entries_str,
          sparse_directory_associativity,
@@ -168,16 +170,11 @@ MemoryManager::MemoryManager(Tile* tile)
          sparse_directory_max_hw_sharers,
          sparse_directory_type_str,
          sparse_directory_access_cycles_str,
-         num_memory_controllers);
+         num_spdir_controllers);
    
-   // Set L2 directory params
-   //L2DirectoryCfg::setDirectoryType(DirectoryEntry::parseDirectoryType(L2_directory_type_str));
-   //L2DirectoryCfg::setMaxHWSharers(L2_directory_max_hw_sharers);
-   //L2DirectoryCfg::setMaxNumSharers(L2_directory_max_num_sharers);
-
    // Instantiate L1 cache cntlr
    _L1_cache_cntlr = new L1CacheCntlr(this,
-         _L2_cache_home_lookup,
+         _SpDir_home_lookup,
          getCacheLineSize(),
          L1_icache_size,
          L1_icache_associativity,
@@ -197,7 +194,6 @@ MemoryManager::MemoryManager(Tile* tile)
          L1_dcache_track_miss_types);
    
    // Instantiate L2 cache cntlr
-   // TODO:add sparse dir param
    _L2_cache_cntlr = new L2CacheCntlr(this,
          _dram_home_lookup,
          _sp_dir,
@@ -216,7 +212,7 @@ MemoryManager::~MemoryManager()
 {
    // Delete home lookup functions
    delete _dram_home_lookup;
-   delete _L2_cache_home_lookup;
+   delete _SpDir_home_lookup;
 
    // Delele L1,L2 Cache Cntlr, Dram Cntlr
    delete _L1_cache_cntlr;
@@ -225,7 +221,6 @@ MemoryManager::~MemoryManager()
    {
       delete _dram_cntlr;
    }
-   //TODO:delete sparse dir
    delete _sp_dir;
 }
 
@@ -269,8 +264,8 @@ MemoryManager::handleMsgFromNetwork(NetPacket& packet)
          assert(sender.tile_id == getTile()->getId());
          _L1_cache_cntlr->handleMsgFromCore(shmem_msg);
          break;
-      case MemComponent::L2_CACHE:
-         _L1_cache_cntlr->handleMsgFromL2Cache(sender.tile_id, shmem_msg);
+      case MemComponent::SP_DIRECTORY:
+         _L1_cache_cntlr->handleMsgFromSpDir(sender.tile_id, shmem_msg);
          break;
       default:
          LOG_PRINT_ERROR("Unrecognized sender component(%u)", sender_mem_component);
@@ -428,6 +423,8 @@ MemoryManager::enableModels()
 
    _L2_cache_cntlr->enable();
 
+   _sp_dir->getSparseDirectoryCache()->enable();
+
    if (_dram_cntlr_present)
    {
       _dram_cntlr->getDramPerfModel()->enable();
@@ -443,6 +440,8 @@ MemoryManager::disableModels()
    _L1_cache_cntlr->getL1DCache()->disable();
    _L2_cache_cntlr->getL2Cache()->disable();
    _L2_cache_cntlr->disable();
+
+   _sp_dir->getSparseDirectoryCache()->disable();
 
    if (_dram_cntlr_present)
    {
@@ -462,6 +461,8 @@ MemoryManager::outputSummary(std::ostream &os, const Time& target_completion_tim
    _L1_cache_cntlr->getL1DCache()->outputSummary(os, target_completion_time);
    _L2_cache_cntlr->getL2Cache()->outputSummary(os, target_completion_time);
 
+   _sp_dir->getSparseDirectoryCache()->outputSummary(os);
+
    if (_dram_cntlr_present)
    {
       _dram_cntlr->getDramPerfModel()->outputSummary(os);
@@ -478,6 +479,7 @@ MemoryManager::computeEnergy(const Time& curr_time)
    _L1_cache_cntlr->getL1ICache()->computeEnergy(curr_time);
    _L1_cache_cntlr->getL1DCache()->computeEnergy(curr_time);
    _L2_cache_cntlr->getL2Cache()->computeEnergy(curr_time);
+   //_sp_dir->getSparseDirectoryCache()->outputEnergy(curr_time);
 }
 
 double
@@ -486,6 +488,7 @@ MemoryManager::getDynamicEnergy()
    double dynamic_energy = _L1_cache_cntlr->getL1ICache()->getDynamicEnergy() +
                            _L1_cache_cntlr->getL1DCache()->getDynamicEnergy() +
                            _L2_cache_cntlr->getL2Cache()->getDynamicEnergy();
+                           //_sp_dir->getSparseDirectoryCache()->getDynamicEnergy();
    return dynamic_energy;
 }
 
@@ -495,6 +498,7 @@ MemoryManager::getLeakageEnergy()
    double leakage_energy = _L1_cache_cntlr->getL1ICache()->getLeakageEnergy() +
                            _L1_cache_cntlr->getL1DCache()->getLeakageEnergy() +
                            _L2_cache_cntlr->getL2Cache()->getLeakageEnergy();
+                           //_sp_dir->getSparseDirectoryCache()->getLeakageEnergy();
    return leakage_energy;
 }
 
@@ -514,6 +518,10 @@ MemoryManager::getDVFS(module_t module_type, double &frequency, double &voltage)
 
       case L2_CACHE:
          getL2Cache()->getDVFS(frequency,voltage);
+         break;
+
+      case DIRECTORY:
+         getSparseDirectoryCache()->getDVFS(frequency,voltage);
          break;
 
       default:
@@ -539,6 +547,10 @@ MemoryManager::setDVFS(module_t module_type, double frequency, voltage_option_t 
 
       case L2_CACHE:
          rc = getL2Cache()->setDVFS(frequency, voltage_flag, curr_time);
+         break;
+
+      case DIRECTORY:
+         rc = getSparseDirectoryCache()->setDVFS(frequency,voltage_flag, curr_time);
          break;
 
       default:

@@ -137,6 +137,12 @@ void SparseDirectoryCntlr::handleMsgFromL2Cache(tile_id_t sender, ShmemMsg* shme
          }
       }
          break;
+      case ShmemMsg::SPDIR_RD_REP:
+      {
+         IntPtr address = shmem_msg->getAddress();
+
+      }
+         break;
 
       default:
          LOG_PRINT_ERROR("Unrecognized Shmem Msg Type: %u", shmem_msg_type);
