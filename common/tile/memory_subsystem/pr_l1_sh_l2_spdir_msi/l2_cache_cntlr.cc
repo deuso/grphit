@@ -481,14 +481,20 @@ L2CacheCntlr::processRepFromSpDir(const ShmemMsg* shmem_msg, ShL2CacheLineInfo* 
    //assert(!shmem_msg->isReplyExpected());
 
    // Write the line to the L2 cache if there is no request (or a SH_REQ)
-   ShmemReq* shmem_req = _L2_cache_req_queue.front(address);
-   if ( (shmem_req == NULL) || (TYPE(shmem_req) == ShmemMsg::SH_REQ) )
+   //ShmemReq* shmem_req = _L2_cache_req_queue.front(address);
+   if ( shmem_msg->getDataBuf()!=NULL)
    {
       writeCacheLine(address, shmem_msg->getDataBuf());
+      // Set the line to dirty even if it is logically so
+      L2_cache_line_info->setCState(CacheState::DIRTY);
    }
-   // Set the line to dirty even if it is logically so
-   L2_cache_line_info->setCState(CacheState::DIRTY);
-
+   if(shmem_msg->getType()==ShmemMsg::SPDIR_WR_REQ)
+   {
+	   //send SPDIR_WR_REP
+	   ShmemMsg msg(ShmemMsg::SPDIR_WR_REP, MemComponent::L2_CACHE, MemComponent::SP_DIRECTORY,
+			   	   	   	  getTileId(), false, address, shmem_msg->isModeled());
+	   _memory_manager->sendMsg(getTileId(), msg);
+   }
 }
 
 

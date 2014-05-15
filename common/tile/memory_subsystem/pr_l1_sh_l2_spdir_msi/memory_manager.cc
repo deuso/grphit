@@ -277,6 +277,7 @@ MemoryManager::handleMsgFromNetwork(NetPacket& packet)
       switch(sender_mem_component)
       {
       case MemComponent::SP_DIRECTORY:
+    	  assert(sender.tile_id == getTile()->getId());
          _L2_cache_cntlr->handleMsgFromSpDir(sender.tile_id, shmem_msg);
          break;
       case MemComponent::DRAM_CNTLR:

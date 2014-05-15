@@ -51,15 +51,15 @@ namespace PrL1ShL2SpDirMSI
       DirectoryEntry* processDirectoryEntryAllocationReq(ShmemReq* shmem_req);
       void processNullifyReq(ShmemReq* shmem_req);
 
-      void processNextReqFromL1Cache(IntPtr address);
+      void processNextReqFromQueue(IntPtr address);
       void processExReqFromL1Cache(ShmemReq* shmem_req, Byte* cached_data_buf = NULL);
       void processShReqFromL1Cache(ShmemReq* shmem_req, Byte* cached_data_buf = NULL);
-      void retrieveDataAndSendToL1Cache(ShmemMsg::Type reply_msg_type, tile_id_t receiver, MemComponent::Type receiver_type, IntPtr address, Byte* cached_data_buf, bool msg_modeled);
+//      void retrieveDataAndSendToL1Cache(ShmemMsg::Type reply_msg_type, tile_id_t receiver, MemComponent::Type receiver_type, IntPtr address, Byte* cached_data_buf, bool msg_modeled);
 
       void processInvRepFromL1Cache(tile_id_t sender, ShmemMsg* shmem_msg);
       void processFlushRepFromL1Cache(tile_id_t sender, ShmemMsg* shmem_msg);
       void processWbRepFromL1Cache(tile_id_t sender, ShmemMsg* shmem_msg);
       void sendDataToL2(IntPtr address, Byte* data_buf, bool msg_modeled);
-      void getDataFromL2(IntPtr address, Byte* data_buf, bool msg_modeled);
+//      void getDataFromL2(IntPtr address, Byte* data_buf, bool msg_modeled);
    };
 }

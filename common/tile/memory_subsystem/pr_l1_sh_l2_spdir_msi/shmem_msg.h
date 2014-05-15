@@ -86,6 +86,7 @@ public:
 
    void setMsgType(Type msg_type)                     { _msg_type = msg_type; }
    void setDataBuf(Byte* data_buf)                    { _data_buf = data_buf; }
+   void setDataLen(UInt32 len)                    { _data_length = len; }
 
 private:   
    Type _msg_type;
