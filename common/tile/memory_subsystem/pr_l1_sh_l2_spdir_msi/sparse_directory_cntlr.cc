@@ -147,7 +147,7 @@ void SparseDirectoryCntlr::handleMsgFromL2Cache(tile_id_t sender, ShmemMsg* shme
 		   shmem_req->updateTime(getShmemPerfModel()->getCurrTime());
 		   getShmemPerfModel()->updateCurrTime(shmem_req->getTime());
 
-		   // An involuntary/voluntary Flush
+		   // Response to L1
 		   if (shmem_req->getShmemMsg()->getType() == ShmemMsg::EX_REQ)
 		   {
 			   processExReqFromL1Cache(shmem_req, shmem_msg->getDataBuf());
@@ -169,7 +169,8 @@ void SparseDirectoryCntlr::handleMsgFromL2Cache(tile_id_t sender, ShmemMsg* shme
          break;
       case ShmemMsg::SPDIR_WR_REP:
       {
-    	  processNextReqFromQueue(address);
+    	  //processNextReqFromQueue(address);
+         LOG_PRINT("SPDIR_WR_REP OK");
       }
       	  break;
       default:
@@ -304,21 +305,27 @@ void SparseDirectoryCntlr::processNullifyReq(ShmemReq* shmem_req)
 
       case DirectoryState::UNCACHED:
       {
-         _sparse_directory_cache->invalidateDirectoryEntry(address);
-         if(shmem_req->getShmemMsg()->getSenderMemComponent()==MemComponent::L2_CACHE)
+         //if(shmem_req->getShmemMsg()->getSenderMemComponent()==MemComponent::L2_CACHE)
+         if(shmem_req->getShmemMsg()->getType()==ShmemMsg::L2_SPDIR_REQ)
          {
-        	 ShmemMsg msg(ShmemMsg::L2_SPDIR_REP, MemComponent::SP_DIRECTORY, MemComponent::L2_CACHE,
-						  requester, false, address, msg_modeled);
-        	 if(shmem_req->getShmemMsg()->getDataBuf()!=NULL)
-        	 {
-        		 msg.setDataBuf(shmem_req->getShmemMsg()->getDataBuf());
-        		 msg.setDataLen(getCacheLineSize());
-        	 }
-        	 _memory_manager->sendMsg(requester, msg);
+            //replace to req_q to invalidate later
+            _sparse_directory_cache->replaceDirectoryEntry(address, INVALID_ADDRESS);
          }
 
+         //invalidated entry should inform L2
+         _sparse_directory_cache->invalidateDirectoryEntry(address);
+         
+         ShmemMsg msg(ShmemMsg::L2_SPDIR_REP, MemComponent::SP_DIRECTORY, MemComponent::L2_CACHE,
+                      requester, false, address, msg_modeled);
+         if(shmem_req->getShmemMsg()->getDataBuf()!=NULL)
+         {
+            msg.setDataBuf(shmem_req->getShmemMsg()->getDataBuf());
+            msg.setDataLen(getCacheLineSize());
+         }
+         //_memory_manager->sendMsg(requester, msg);
+        	_memory_manager->sendMsg(_memory_manager->getTile()->getId(), msg);
+         
          // Process Next Request
-         // TODO: distinguish nullify req originated from l1 or l2
          processNextReqFromQueue(address);
       }
          break;
@@ -409,7 +416,7 @@ void SparseDirectoryCntlr::processExReqFromL1Cache(ShmemReq* shmem_req, Byte* ca
         	 {
         		 ShmemMsg shmem_msg(ShmemMsg::SPDIR_RD_REQ, MemComponent::SP_DIRECTORY, MemComponent::L2_CACHE,
         		 					requester, false, address, msg_modeled);
-        		 _memory_manager->sendMsg(requester, shmem_msg);
+        		 _memory_manager->sendMsg(_memory_manager->getTile()->getId(), shmem_msg);
         	 }
          }
          break;
@@ -455,24 +462,45 @@ void SparseDirectoryCntlr::processShReqFromL1Cache(ShmemReq* shmem_req, Byte* ca
          {
             if((inst && (requester_mem_component==MemComponent::L1_ICACHE))||(!inst && (requester_mem_component==MemComponent::L1_DCACHE)))
             {
-               bool add_result = directory_entry->addSharer(requester);
-               if (add_result == false)
+               if(cached_data_buf!=NULL)
                {
-                  tile_id_t sharer_id = directory_entry->getOneSharer();
-                  // Send a message to another sharer to invalidate that
-                  ShmemMsg msg(ShmemMsg::INV_REQ, MemComponent::SP_DIRECTORY, requester_mem_component, requester, false, address,
-                           msg_modeled);
-                  _memory_manager->sendMsg(sharer_id, msg);
+                  ShmemMsg msg(ShmemMsg::SH_REP, MemComponent::SP_DIRECTORY, requester_mem_component, requester, false, address,
+                           cached_data_buf, getCacheLineSize(), msg_modeled);
+                  _memory_manager->sendMsg(requester, msg);
+
+                  // Process Next Request
+                  processNextReqFromQueue(address);
+               }
+               else if(shmem_req->getShmemMsg()->getDataBuf()!=NULL)
+               {
+                  ShmemMsg msg(ShmemMsg::SH_REP, MemComponent::SP_DIRECTORY, requester_mem_component, requester, false, address,
+                               shmem_req->getShmemMsg()->getDataBuf() , getCacheLineSize(), msg_modeled);
+                  _memory_manager->sendMsg(requester, msg);
+
+                  // Process Next Request
+                  processNextReqFromQueue(address);
                }
                else
                {
-                  //retrieveDataAndSendToL1Cache(ShmemMsg::SH_REP, requester, requester_mem_component, address, cached_data_buf, msg_modeled);
+                  bool add_result = directory_entry->addSharer(requester);
+                  if (add_result == false)
+                  {
+                     tile_id_t sharer_id = directory_entry->getOneSharer();
+                     // Send a message to another sharer to invalidate that
+                     ShmemMsg msg(ShmemMsg::INV_REQ, MemComponent::SP_DIRECTORY, requester_mem_component, requester, false, address,
+                              msg_modeled);
+                     _memory_manager->sendMsg(sharer_id, msg);
+                  }
+                  else
+                  {
+                     //retrieveDataAndSendToL1Cache(ShmemMsg::SH_REP, requester, requester_mem_component, address, cached_data_buf, msg_modeled);
 
-                  // Process Next Request
-                  //processNextReqFromL1Cache(address);
-            	   ShmemMsg shmem_msg(ShmemMsg::SPDIR_RD_REQ, MemComponent::SP_DIRECTORY, MemComponent::L2_CACHE,
-									  requester, false, address, msg_modeled);
-				   _memory_manager->sendMsg(requester, shmem_msg);
+                     // Process Next Request
+                     //processNextReqFromL1Cache(address);
+                        ShmemMsg shmem_msg(ShmemMsg::SPDIR_RD_REQ, MemComponent::SP_DIRECTORY, MemComponent::L2_CACHE,
+                                 requester, false, address, msg_modeled);
+                        _memory_manager->sendMsg(_memory_manager->getTile()->getId(), shmem_msg);
+                  }
                }
             }
             else
@@ -485,26 +513,26 @@ void SparseDirectoryCntlr::processShReqFromL1Cache(ShmemReq* shmem_req, Byte* ca
 
       case DirectoryState::UNCACHED:
          {
-        	 if(cached_data_buf != NULL)
-			 {
-				// Modifiy the directory entry contents
-				__attribute__((unused)) bool add_result = directory_entry->addSharer(requester);
-				assert(add_result);
-				directory_block_info->setDState(DirectoryState::SHARED);
+            if(cached_data_buf != NULL)
+            {
+               // Modifiy the directory entry contents
+               __attribute__((unused)) bool add_result = directory_entry->addSharer(requester);
+               assert(add_result);
+               directory_block_info->setDState(DirectoryState::SHARED);
 
-				ShmemMsg msg(ShmemMsg::SH_REP, MemComponent::SP_DIRECTORY, requester_mem_component, requester, false, address,
-								   cached_data_buf, getCacheLineSize(), msg_modeled);
-				_memory_manager->sendMsg(requester, msg);
+               ShmemMsg msg(ShmemMsg::SH_REP, MemComponent::SP_DIRECTORY, requester_mem_component, requester, false, address,
+                        cached_data_buf, getCacheLineSize(), msg_modeled);
+               _memory_manager->sendMsg(requester, msg);
 
-				// Process Next Request
-				processNextReqFromQueue(address);
-			 }
-			 else
-			 {
-				 ShmemMsg shmem_msg(ShmemMsg::SPDIR_RD_REQ, MemComponent::SP_DIRECTORY, MemComponent::L2_CACHE,
-									requester, false, address, msg_modeled);
-				 _memory_manager->sendMsg(requester, shmem_msg);
-			 }
+               // Process Next Request
+               processNextReqFromQueue(address);
+            }
+            else
+            {
+               ShmemMsg shmem_msg(ShmemMsg::SPDIR_RD_REQ, MemComponent::SP_DIRECTORY, MemComponent::L2_CACHE,
+                        requester, false, address, msg_modeled);
+               _memory_manager->sendMsg(_memory_manager->getTile()->getId(), shmem_msg);
+            }
          }
          break;
 

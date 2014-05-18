@@ -359,7 +359,7 @@ L2CacheCntlr::processShmemReq(ShmemReq* shmem_req)
    switch (msg_type)
    {
       case ShmemMsg::SPDIR_RD_REQ:
-      processReqFromSpDir(shmem_req, NULL, true);
+      processReadReqFromSpDir(shmem_req, NULL, true);
       break;
    default:
       LOG_PRINT_ERROR("Unrecognized Shmem Msg Type(%u)", TYPE(shmem_req));
@@ -425,16 +425,17 @@ L2CacheCntlr::processNullifyReq(ShmemReq* nullify_req, Byte* data_buf)
 }
 
 void
-L2CacheCntlr::processReqFromSpDir(ShmemReq* shmem_req, Byte* data_buf, bool first_call)
+L2CacheCntlr::processReadReqFromSpDir(ShmemReq* shmem_req, Byte* data_buf, bool first_call)
 {
    IntPtr address = shmem_req->getShmemMsg()->getAddress();
    tile_id_t requester = shmem_req->getShmemMsg()->getRequester();
    __attribute__((unused)) MemComponent::Type requester_mem_component = shmem_req->getShmemMsg()->getSenderMemComponent();
    assert(requester_mem_component == MemComponent::SP_DIRECTORY);
+   ShmemMsg::Type msg_type = TYPE(shmem_req);
    bool msg_modeled = shmem_req->getShmemMsg()->isModeled();
 
    ShL2CacheLineInfo L2_cache_line_info;
-   getCacheLineInfo(address, &L2_cache_line_info, ShmemMsg::EX_REQ, first_call);
+   getCacheLineInfo(address, &L2_cache_line_info, msg_type, first_call);
  
    assert(L2_cache_line_info.getCState() != CacheState::INVALID);
 
@@ -450,8 +451,11 @@ L2CacheCntlr::processReqFromSpDir(ShmemReq* shmem_req, Byte* data_buf, bool firs
 
       // Set caching component 
       //L2_cache_line_info.setCachingComponent(MemComponent::L1_DCACHE);
+      
+      //set line state sp-dir ref
+      L2_cache_line_info.setSpDir(true);
 
-      readCacheLineAndSendToSpDir(ShmemMsg::EX_REP, address, MemComponent::SP_DIRECTORY, data_buf, requester, msg_modeled);
+      readCacheLineAndSendToSpDir(ShmemMsg::SPDIR_RD_REP, address, MemComponent::SP_DIRECTORY, data_buf, requester, msg_modeled);
 
       // Set completed to true
       completed = true;
@@ -488,12 +492,17 @@ L2CacheCntlr::processRepFromSpDir(const ShmemMsg* shmem_msg, ShL2CacheLineInfo* 
       // Set the line to dirty even if it is logically so
       L2_cache_line_info->setCState(CacheState::DIRTY);
    }
+
    if(shmem_msg->getType()==ShmemMsg::SPDIR_WR_REQ)
    {
 	   //send SPDIR_WR_REP
 	   ShmemMsg msg(ShmemMsg::SPDIR_WR_REP, MemComponent::L2_CACHE, MemComponent::SP_DIRECTORY,
 			   	   	   	  getTileId(), false, address, shmem_msg->isModeled());
 	   _memory_manager->sendMsg(getTileId(), msg);
+   }
+   else
+   {
+      L2_cache_line_info->setSpDir(false);
    }
 }
 
@@ -516,7 +525,7 @@ L2CacheCntlr::restartShmemReq(ShmemReq* shmem_req, ShL2CacheLineInfo* L2_cache_l
    {
    case ShmemMsg::SPDIR_RD_REQ:
       //if (curr_dstate == DirectoryState::UNCACHED)
-         processReqFromSpDir(shmem_req, data_buf);
+         processReadReqFromSpDir(shmem_req, data_buf);
       break;
 
 
@@ -544,7 +553,7 @@ L2CacheCntlr::readCacheLineAndSendToSpDir(ShmemMsg::Type reply_msg_type,
                          requester, false, address, 
                          data_buf, getCacheLineSize(),
                          msg_modeled);
-      _memory_manager->sendMsg(requester, shmem_msg);
+      _memory_manager->sendMsg(getTileId(), shmem_msg);
    }
    else
    {
@@ -556,8 +565,9 @@ L2CacheCntlr::readCacheLineAndSendToSpDir(ShmemMsg::Type reply_msg_type,
                          requester, false, address,
                          L2_data_buf, getCacheLineSize(),
                          msg_modeled);
-      _memory_manager->sendMsg(requester, shmem_msg); 
+      _memory_manager->sendMsg(getTileId(), shmem_msg); 
    }
+
 }
 
 void
@@ -584,9 +594,10 @@ L2CacheCntlr::getMemOpTypeFromShmemMsgType(ShmemMsg::Type shmem_msg_type)
 {
    switch (shmem_msg_type)
    {
-   case ShmemMsg::SH_REQ:
+   case ShmemMsg::SPDIR_RD_REQ:
       return Core::READ;
-   case ShmemMsg::EX_REQ:
+   case ShmemMsg::SPDIR_WR_REQ:
+   case ShmemMsg::L2_SPDIR_REP:
       return Core::WRITE;
    default:
       LOG_PRINT_ERROR("Unrecognized Msg(%u)", shmem_msg_type);

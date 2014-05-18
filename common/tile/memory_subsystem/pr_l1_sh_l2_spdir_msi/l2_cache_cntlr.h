@@ -82,7 +82,7 @@ namespace PrL1ShL2SpDirMSI
       // Process Request to invalidate the sharers of a cache line
       void processNullifyReq(ShmemReq* nullify_req, Byte* data_buf);
       // Process Request from Sparse Directory
-      void processReqFromSpDir(ShmemReq* shmem_req, Byte* data_buf, bool first_call = false);
+      void processReadReqFromSpDir(ShmemReq* shmem_req, Byte* data_buf, bool first_call = false);
       void processRepFromSpDir(const ShmemMsg* shmem_msg, ShL2CacheLineInfo* L2_cache_line_info);
 
       // Restart the shmem request

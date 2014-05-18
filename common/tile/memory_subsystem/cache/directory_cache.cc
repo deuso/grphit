@@ -424,7 +424,7 @@ DirectoryCache::dummyOutputSummary(ostream& out, tile_id_t tile_id)
 void
 DirectoryCache::printAutogenDirectorySizeAndAccessCycles(ostream& out)
 {
-   if (_total_entries_str == "auto")
+   if ((_total_entries_str == "auto")||(_total_entries_str == "spdir"))
    {
       out << "    Total Entries [auto-generated]: " << _total_entries << endl;
       UInt32 directory_size_in_KB = (UInt32) ceil(1.0 * _directory_size / 1024);

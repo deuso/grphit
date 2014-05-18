@@ -277,7 +277,11 @@ MemoryManager::handleMsgFromNetwork(NetPacket& packet)
       switch(sender_mem_component)
       {
       case MemComponent::SP_DIRECTORY:
-    	  assert(sender.tile_id == getTile()->getId());
+         //if(sender.tile_id != getTile()->getId())
+         //{
+         //   LOG_PRINT_ERROR("Sender tile id %d, this tile id %d",sender.tile_id, getTile()->getId());
+         //}
+    	   //assert(sender.tile_id == getTile()->getId());
          _L2_cache_cntlr->handleMsgFromSpDir(sender.tile_id, shmem_msg);
          break;
       case MemComponent::DRAM_CNTLR:
@@ -296,6 +300,7 @@ MemoryManager::handleMsgFromNetwork(NetPacket& packet)
          _sp_dir->handleMsgFromL1Cache(sender.tile_id, shmem_msg);
          break;
       case MemComponent::L2_CACHE:
+    	   //assert(sender.tile_id == getTile()->getId());
          _sp_dir->handleMsgFromL2Cache(sender.tile_id, shmem_msg);
          break;
       default:
@@ -462,6 +467,7 @@ MemoryManager::outputSummary(std::ostream &os, const Time& target_completion_tim
    _L1_cache_cntlr->getL1DCache()->outputSummary(os, target_completion_time);
    _L2_cache_cntlr->getL2Cache()->outputSummary(os, target_completion_time);
 
+   os << "Sparse Directory Summary:\n";
    _sp_dir->getSparseDirectoryCache()->outputSummary(os);
 
    if (_dram_cntlr_present)
