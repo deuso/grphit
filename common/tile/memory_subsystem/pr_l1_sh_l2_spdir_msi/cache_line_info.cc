@@ -20,9 +20,10 @@ CacheLineInfo* createCacheLineInfo(SInt32 cache_level)
 
 // ShL2 CacheLineInfo
 
-ShL2CacheLineInfo::ShL2CacheLineInfo(IntPtr tag, bool spdir)
+ShL2CacheLineInfo::ShL2CacheLineInfo(IntPtr tag, DirectoryEntry* directory_entry)
    : CacheLineInfo(tag, CacheState::INVALID)
-   , _spdir(spdir)
+   , _directory_entry(directory_entry)
+   , _caching_component(MemComponent::INVALID)
 {}
 
 ShL2CacheLineInfo::~ShL2CacheLineInfo()
@@ -33,7 +34,8 @@ ShL2CacheLineInfo::assign(CacheLineInfo* cache_line_info)
 {
    CacheLineInfo::assign(cache_line_info);
    ShL2CacheLineInfo* L2_cache_line_info = dynamic_cast<ShL2CacheLineInfo*>(cache_line_info);
-   _spdir= L2_cache_line_info->getSpDir();
+   _directory_entry = L2_cache_line_info->getDirectoryEntry();
+   _caching_component = L2_cache_line_info->getCachingComponent();
 }
 
 }

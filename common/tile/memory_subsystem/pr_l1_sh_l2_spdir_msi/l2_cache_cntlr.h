@@ -1,7 +1,7 @@
 #pragma once
 
 // Forward declarations
-namespace PrL1ShL2SpDirMSI
+namespace PrL1ShL2MSI
 {
    class MemoryManager;
 }
@@ -21,16 +21,14 @@ using std::map;
 #include "shmem_perf_model.h"
 #include "cache_replacement_policy.h"
 #include "cache_hash_fn.h"
-#include "sparse_directory_cntlr.h"
 
-namespace PrL1ShL2SpDirMSI
+namespace PrL1ShL2MSI
 {
    class L2CacheCntlr
    {
    public:
       L2CacheCntlr(MemoryManager* memory_manager,
                    AddressHomeLookup* dram_home_lookup,
-                   SparseDirectoryCntlr* sp_dir,
                    UInt32 cache_line_size,
                    UInt32 L2_cache_size,
                    UInt32 L2_cache_associativity,
@@ -45,7 +43,7 @@ namespace PrL1ShL2SpDirMSI
       Cache* getL2Cache() { return _L2_cache; }
 
       // Handle message from L1 Cache
-      void handleMsgFromSpDir(tile_id_t sender, ShmemMsg* shmem_msg);
+      void handleMsgFromL1Cache(tile_id_t sender, ShmemMsg* shmem_msg);
       // Handle message from Dram 
       void handleMsgFromDram(tile_id_t sender, ShmemMsg* shmem_msg);
       // Output summary
@@ -58,7 +56,6 @@ namespace PrL1ShL2SpDirMSI
       // Data Members
       MemoryManager* _memory_manager;
       Cache* _L2_cache;
-      SparseDirectoryCntlr* _sp_dir;
       CacheReplacementPolicy* _L2_cache_replacement_policy_obj;
       CacheHashFn* _L2_cache_hash_fn_obj;
       AddressHomeLookup* _dram_home_lookup;
@@ -81,18 +78,26 @@ namespace PrL1ShL2SpDirMSI
 
       // Process Request to invalidate the sharers of a cache line
       void processNullifyReq(ShmemReq* nullify_req, Byte* data_buf);
-      // Process Request from Sparse Directory
-      void processReadReqFromSpDir(ShmemReq* shmem_req, Byte* data_buf, bool first_call = false);
-      void processRepFromSpDir(const ShmemMsg* shmem_msg, ShL2CacheLineInfo* L2_cache_line_info);
+      // Process Request from L1-I/L1-D caches
+      void processExReqFromL1Cache(ShmemReq* shmem_req, Byte* data_buf, bool first_call = false);
+      void processShReqFromL1Cache(ShmemReq* shmem_req, Byte* data_buf, bool first_call = false);
+      void processInvRepFromL1Cache(tile_id_t sender, const ShmemMsg* shmem_msg, ShL2CacheLineInfo* L2_cache_line_info);
+      void processFlushRepFromL1Cache(tile_id_t sender, const ShmemMsg* shmem_msg, ShL2CacheLineInfo* L2_cache_line_info);
+      void processWbRepFromL1Cache(tile_id_t sender, const ShmemMsg* shmem_msg, ShL2CacheLineInfo* L2_cache_line_info);
 
       // Restart the shmem request
       void restartShmemReq(ShmemReq* shmem_req, ShL2CacheLineInfo* L2_cache_line_info, Byte* data_buf);
       // Process the next request to a cache line
-      void processNextReqFromSpDir(IntPtr address);
+      void processNextReqFromL1Cache(IntPtr address);
       // Process shmem request
       void processShmemReq(ShmemReq* shmem_req);
+      // Send invalidation msg to multiple tiles
+      void sendInvalidationMsg(ShmemMsg::Type requester_msg_type,
+                               IntPtr address, MemComponent::Type receiver_mem_component,
+                               bool all_tiles_sharers, vector<tile_id_t>& sharers_list,
+                               tile_id_t requester, bool msg_modeled);
       // Read data from L2 cache and send to L1-I/L1-D cache
-      void readCacheLineAndSendToSpDir(ShmemMsg::Type reply_msg_type,
+      void readCacheLineAndSendToL1Cache(ShmemMsg::Type reply_msg_type,
                                          IntPtr address, MemComponent::Type requester_mem_component,
                                          Byte* data_buf,
                                          tile_id_t requester, bool msg_modeled);

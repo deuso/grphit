@@ -249,24 +249,12 @@ MemoryManager::handleMsgFromNetwork(NetPacket& packet)
    MemComponent::Type receiver_mem_component = shmem_msg->getReceiverMemComponent();
    MemComponent::Type sender_mem_component = shmem_msg->getSenderMemComponent();
 
-   //if(shmem_msg->getAddress()==0xd36c00)
-   //{
-   //LOG_PRINT_WARNING("Time(%llu), Got Shmem Msg: type(%i), address(%#lx), sender_mem_component(%u), receiver_mem_component(%u), "
-   //          "sender(%i,%i), receiver(%i,%i), modeled(%s)", 
-   //          msg_time.toNanosec(), shmem_msg->getType(), shmem_msg->getAddress(),
-   //          sender_mem_component, receiver_mem_component,
-   //          sender.tile_id, sender.core_type, packet.receiver.tile_id, packet.receiver.core_type,
-   //          shmem_msg->isModeled() ? "TRUE" : "FALSE");
-   //}
-   //else
-   {
    LOG_PRINT("Time(%llu), Got Shmem Msg: type(%i), address(%#lx), sender_mem_component(%u), receiver_mem_component(%u), "
              "sender(%i,%i), receiver(%i,%i), modeled(%s)", 
              msg_time.toNanosec(), shmem_msg->getType(), shmem_msg->getAddress(),
              sender_mem_component, receiver_mem_component,
              sender.tile_id, sender.core_type, packet.receiver.tile_id, packet.receiver.core_type,
              shmem_msg->isModeled() ? "TRUE" : "FALSE");
-   }
 
    switch (receiver_mem_component)
    {
@@ -278,8 +266,8 @@ MemoryManager::handleMsgFromNetwork(NetPacket& packet)
          assert(sender.tile_id == getTile()->getId());
          _L1_cache_cntlr->handleMsgFromCore(shmem_msg);
          break;
-      case MemComponent::SP_DIRECTORY:
-         _L1_cache_cntlr->handleMsgFromSpDir(sender.tile_id, shmem_msg);
+      case MemComponent::L2_CACHE:
+         _L1_cache_cntlr->handleMsgFromL2Cache(sender.tile_id, shmem_msg);
          break;
       default:
          LOG_PRINT_ERROR("Unrecognized sender component(%u)", sender_mem_component);
@@ -290,32 +278,12 @@ MemoryManager::handleMsgFromNetwork(NetPacket& packet)
    case MemComponent::L2_CACHE:
       switch(sender_mem_component)
       {
-      case MemComponent::SP_DIRECTORY:
-         //if(sender.tile_id != getTile()->getId())
-         //{
-         //   LOG_PRINT_ERROR("Sender tile id %d, this tile id %d",sender.tile_id, getTile()->getId());
-         //}
-    	   //assert(sender.tile_id == getTile()->getId());
-         _L2_cache_cntlr->handleMsgFromSpDir(sender.tile_id, shmem_msg);
+      case MemComponent::L1_ICACHE:
+      case MemComponent::L1_DCACHE:
+         _L2_cache_cntlr->handleMsgFromL1Cache(sender.tile_id, shmem_msg);
          break;
       case MemComponent::DRAM_CNTLR:
          _L2_cache_cntlr->handleMsgFromDram(sender.tile_id, shmem_msg);
-         break;
-      default:
-         LOG_PRINT_ERROR("Unrecognized sender component(%u)", sender_mem_component);
-         break;
-      }
-      break;
-   case MemComponent::SP_DIRECTORY:
-      switch(sender_mem_component)
-      {
-      case MemComponent::L1_ICACHE:
-      case MemComponent::L1_DCACHE:
-         _sp_dir->handleMsgFromL1Cache(sender.tile_id, shmem_msg);
-         break;
-      case MemComponent::L2_CACHE:
-    	   //assert(sender.tile_id == getTile()->getId());
-         _sp_dir->handleMsgFromL2Cache(sender.tile_id, shmem_msg);
          break;
       default:
          LOG_PRINT_ERROR("Unrecognized sender component(%u)", sender_mem_component);
@@ -443,8 +411,6 @@ MemoryManager::enableModels()
 
    _L2_cache_cntlr->enable();
 
-   _sp_dir->getSparseDirectoryCache()->enable();
-
    if (_dram_cntlr_present)
    {
       _dram_cntlr->getDramPerfModel()->enable();
@@ -460,8 +426,6 @@ MemoryManager::disableModels()
    _L1_cache_cntlr->getL1DCache()->disable();
    _L2_cache_cntlr->getL2Cache()->disable();
    _L2_cache_cntlr->disable();
-
-   _sp_dir->getSparseDirectoryCache()->disable();
 
    if (_dram_cntlr_present)
    {
@@ -481,9 +445,6 @@ MemoryManager::outputSummary(std::ostream &os, const Time& target_completion_tim
    _L1_cache_cntlr->getL1DCache()->outputSummary(os, target_completion_time);
    _L2_cache_cntlr->getL2Cache()->outputSummary(os, target_completion_time);
 
-   os << "Sparse Directory Summary:\n";
-   _sp_dir->getSparseDirectoryCache()->outputSummary(os);
-
    if (_dram_cntlr_present)
    {
       _dram_cntlr->getDramPerfModel()->outputSummary(os);
@@ -500,7 +461,6 @@ MemoryManager::computeEnergy(const Time& curr_time)
    _L1_cache_cntlr->getL1ICache()->computeEnergy(curr_time);
    _L1_cache_cntlr->getL1DCache()->computeEnergy(curr_time);
    _L2_cache_cntlr->getL2Cache()->computeEnergy(curr_time);
-   //_sp_dir->getSparseDirectoryCache()->outputEnergy(curr_time);
 }
 
 double
@@ -509,7 +469,6 @@ MemoryManager::getDynamicEnergy()
    double dynamic_energy = _L1_cache_cntlr->getL1ICache()->getDynamicEnergy() +
                            _L1_cache_cntlr->getL1DCache()->getDynamicEnergy() +
                            _L2_cache_cntlr->getL2Cache()->getDynamicEnergy();
-                           //_sp_dir->getSparseDirectoryCache()->getDynamicEnergy();
    return dynamic_energy;
 }
 
@@ -519,7 +478,6 @@ MemoryManager::getLeakageEnergy()
    double leakage_energy = _L1_cache_cntlr->getL1ICache()->getLeakageEnergy() +
                            _L1_cache_cntlr->getL1DCache()->getLeakageEnergy() +
                            _L2_cache_cntlr->getL2Cache()->getLeakageEnergy();
-                           //_sp_dir->getSparseDirectoryCache()->getLeakageEnergy();
    return leakage_energy;
 }
 
@@ -539,10 +497,6 @@ MemoryManager::getDVFS(module_t module_type, double &frequency, double &voltage)
 
       case L2_CACHE:
          getL2Cache()->getDVFS(frequency,voltage);
-         break;
-
-      case DIRECTORY:
-         getSparseDirectoryCache()->getDVFS(frequency,voltage);
          break;
 
       default:
@@ -568,10 +522,6 @@ MemoryManager::setDVFS(module_t module_type, double frequency, voltage_option_t 
 
       case L2_CACHE:
          rc = getL2Cache()->setDVFS(frequency, voltage_flag, curr_time);
-         break;
-
-      case DIRECTORY:
-         rc = getSparseDirectoryCache()->setDVFS(frequency,voltage_flag, curr_time);
          break;
 
       default:
