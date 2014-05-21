@@ -1,5 +1,6 @@
-include "tile.h"
-#include "memory_manager_base.h"
+#include "tile.h"
+#include "core.h"
+#include "memory_manager.h"
 
 #include "shmem_perf_model.h"
 
@@ -23,35 +24,39 @@ int main (int argc, char *argv[])
    // 3) Do initiateSharedMemReq() on the memory_manager object
 
    Tile* tile = Sim()->getTileManager()->getTileFromIndex(0);
-   MemoryManagerBase* memory_manager = tile->getMemoryManager();
-   ShmemPerfModel* shmem_perf_model = tile->getShmemPerfModel();
+   MemoryManager* memory_manager = tile->getMemoryManager();
+   ShmemPerfModel* shmem_perf_model = memory_manager->getShmemPerfModel();
+   Core* core = Sim()->getTileManager()->getTileFromID(0)->getCore();
 
    Byte data_buf[4];
    bool cache_hit;
-   UInt64 shmem_time;
+   Time shmem_time;
+
+   Time time1;
 
    // ACCESS - 0
-   shmem_perf_model->setCycleCount(0);
-   cache_hit = memory_manager->coreInitiateMemoryAccess(MemComponent::L1_DCACHE, Core::NONE, Core::READ, address[0], 0, data_buf, 4);
-   shmem_time = shmem_perf_model->getCycleCount();
+   //shmem_perf_model->setCycleCount(0);
+   time1 = shmem_perf_model->getCurrTime();
+   cache_hit = memory_manager->__coreInitiateMemoryAccess(MemComponent::L1_DCACHE, Core::NONE, Core::READ, address[0], 0, data_buf, 4);
+   shmem_time = shmem_perf_model->getCurrTime()-time1;
    printf("Access(0x%x) - READ : Cache Hit(%s), Shmem Time(%llu)\n", address[0], (cache_hit == true) ? "YES" : "NO", shmem_time);
 
    // ACCESS - 1
-   shmem_perf_model->setCycleCount(0);
-   cache_hit = memory_manager->coreInitiateMemoryAccess(MemComponent::L1_DCACHE, Core::NONE, Core::WRITE, address[1], 0, data_buf, 4);
-   shmem_time = shmem_perf_model->getCycleCount();
+   time1 = shmem_perf_model->getCurrTime();
+   cache_hit = memory_manager->__coreInitiateMemoryAccess(MemComponent::L1_DCACHE, Core::NONE, Core::WRITE, address[1], 0, data_buf, 4);
+   shmem_time = shmem_perf_model->getCurrTime()-time1;
    printf("Access(0x%x)- WRITE : Cache Hit(%s), Shmem Time(%llu)\n", address[1], (cache_hit == true) ? "YES" : "NO", shmem_time);
 
    // ACCESS - 2
-   shmem_perf_model->setCycleCount(0);
-   cache_hit = memory_manager->coreInitiateMemoryAccess(MemComponent::L1_DCACHE, Core::NONE, Core::WRITE, address[0], 0, data_buf, 4);
-   shmem_time = shmem_perf_model->getCycleCount();
+   time1 = shmem_perf_model->getCurrTime();
+   cache_hit = memory_manager->__coreInitiateMemoryAccess(MemComponent::L1_DCACHE, Core::NONE, Core::WRITE, address[0], 0, data_buf, 4);
+   shmem_time = shmem_perf_model->getCurrTime()-time1;
    printf("Access(0x%x)- WRITE : Cache Hit(%s), Shmem Time(%llu)\n", address[0], (cache_hit == true) ? "YES" : "NO", shmem_time);
 
    // ACCESS - 2
-   shmem_perf_model->setCycleCount(0);
-   cache_hit = memory_manager->coreInitiateMemoryAccess(MemComponent::L1_DCACHE, Core::NONE, Core::READ, address[0], 0, data_buf, 4);
-   shmem_time = shmem_perf_model->getCycleCount();
+   time1 = shmem_perf_model->getCurrTime();
+   cache_hit = memory_memager->__coreInitiateMemoryAccess(MemComponent::L1_DCACHE, Core::NONE, Core::READ, address[0], 0, data_buf, 4);
+   shmem_time = shmem_perf_model->getCurrTime()-time1;
    printf("Access(0x%x)- READ : Cache Hit(%s), Shmem Time(%llu)\n", address[0], (cache_hit == true) ? "YES" : "NO", shmem_time);
 
    CarbonStopSim();

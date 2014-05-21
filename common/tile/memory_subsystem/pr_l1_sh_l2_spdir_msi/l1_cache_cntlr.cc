@@ -118,6 +118,15 @@ L1CacheCntlr::processMemOpFromCore(MemComponent::Type mem_component,
          return L1_cache_hit;
       }
 
+      //if(ca_address==0xd36c00)
+      //{
+      //   LOG_PRINT_WARNING("miss @address 0x%x", ca_address);
+      //}
+      if(access_num==2)
+      {
+         LOG_PRINT_WARNING("abnormal miss @address 0x%x", ca_address);
+      }
+
       LOG_ASSERT_ERROR(access_num == 1, "Should find line in cache on second access");
       // Expect to find address in the L1-I/L1-D cache if there is an UNLOCK signal
       LOG_ASSERT_ERROR(lock_signal != Core::UNLOCK, "Expected to find address(%#lx) in L1 Cache", ca_address);
@@ -200,6 +209,11 @@ L1CacheCntlr::operationPermissibleinL1Cache(MemComponent::Type mem_component,
       cache_miss_type = getL1Cache(mem_component)->updateMissCounters(address, mem_op_type, !cache_hit);
    }
 
+   //if(address==0xd36c00)
+   //{
+   //   LOG_PRINT_WARNING("address 0x%x, state%d, hit:%s", address, cstate, cache_hit?"true":"false");
+   //}
+
    return make_pair(!cache_hit, cache_miss_type);
 }
 
@@ -240,6 +254,10 @@ L1CacheCntlr::insertCacheLine(MemComponent::Type mem_component, IntPtr address, 
    PrL1CacheLineInfo evicted_cache_line_info;
    Byte writeback_buf[getCacheLineSize()];
 
+   //if(address==0x909feec0)
+   //{
+   //   LOG_PRINT_WARNING("**inserting address 0x%x, cstate %d, data@0x%x", address, cstate, fill_buf);
+   //}
    L1_cache->insertCacheLine(address, &L1_cache_line_info, fill_buf,
                              &eviction, &evicted_address, &evicted_cache_line_info, writeback_buf);
 
@@ -263,6 +281,7 @@ L1CacheCntlr::insertCacheLine(MemComponent::Type mem_component, IntPtr address, 
       }
       else
       {
+         //LOG_PRINT_WARNING( "evicted_address(%#lx), evicted_cstate(%u)",evicted_address, evicted_cstate);
          LOG_ASSERT_ERROR(evicted_cstate == CacheState::SHARED, "evicted_address(%#lx), evicted_cstate(%u)",
                           evicted_address, evicted_cstate);
          ShmemMsg send_shmem_msg(ShmemMsg::INV_REP, mem_component, MemComponent::SP_DIRECTORY,
@@ -370,6 +389,10 @@ L1CacheCntlr::processExRepFromSpDir(tile_id_t sender, ShmemMsg* shmem_msg)
 
    assert(address == _outstanding_shmem_msg.getAddress());
    // Insert Cache Line in L1-I/L1-D Cache
+   //if(address==0xd36c00)
+   //{
+   //   LOG_PRINT_WARNING("EX_REP address 0x%x, data@0x%x", address, data_buf);
+   //}
    insertCacheLine(mem_component, address, CacheState::MODIFIED, data_buf);
 }
 
@@ -429,6 +452,10 @@ L1CacheCntlr::processInvReqFromSpDir(tile_id_t sender, ShmemMsg* shmem_msg)
 
       // Invalidate the line in L1-D Cache
       invalidateCacheLine(mem_component, address);
+   //if(address==0x909feec0)
+   //{
+   //   LOG_PRINT_WARNING("**INVED address 0x%x, cstate %d, data@0x%x", address, cstate);
+   //}
       
       ShmemMsg send_shmem_msg(ShmemMsg::INV_REP, mem_component, MemComponent::SP_DIRECTORY,
                               shmem_msg->getRequester(), shmem_msg->isReplyExpected(), address,
@@ -475,6 +502,10 @@ L1CacheCntlr::processFlushReqFromSpDir(tile_id_t sender, ShmemMsg* shmem_msg)
       // Invalidate the cache line in the L1-I/L1-D cache
       invalidateCacheLine(MemComponent::L1_DCACHE, address);
 
+   //if(address==0x909feec0)
+   //{
+   //   LOG_PRINT_WARNING("**FLUSHED address 0x%x, cstate %d, data@0x%x", address, cstate);
+   //}
       ShmemMsg send_shmem_msg(ShmemMsg::FLUSH_REP, MemComponent::L1_DCACHE, MemComponent::SP_DIRECTORY,
                               shmem_msg->getRequester(), false, address,
                               data_buf, getCacheLineSize(),

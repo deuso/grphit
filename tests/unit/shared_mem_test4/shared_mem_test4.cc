@@ -11,7 +11,7 @@ using namespace std;
 
 void* thread_func(void*);
 
-int num_threads = 64;
+int num_threads = 4;
 int num_iterations = 100;
 
 carbon_barrier_t barrier;

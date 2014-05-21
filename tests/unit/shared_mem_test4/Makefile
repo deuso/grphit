@@ -1,7 +1,7 @@
 TARGET=shared_mem_test4
 SOURCES = shared_mem_test4.cc
 
-CORES ?= 64
+CORES ?= 4
 ENABLE_SM ?= true
 MODE ?= 
 APP_SPECIFIC_CXX_FLAGS ?= -I$(SIM_ROOT)/common/tile \

@@ -8,6 +8,11 @@
 #include "core.h"
 #include "memory_manager.h"
 
+enum shmem_req_t
+{
+   READ,WRITE
+};
+
 int main(int argc, char *argv[])
 {
    CarbonStartSim(argc, argv);
@@ -33,9 +38,10 @@ int main(int argc, char *argv[])
       buff[i] = i;
 
    // Get the cores
-   Tile* cores[2];
+   //Tile* cores[2];
+   Core* cores[2];
    for (UInt32 j = 0; j < 2; j++)
-      cores[j] = Sim()->getTileManager()->getTileFromID(j);
+      cores[j] = Sim()->getTileManager()->getTileFromID(j)->getCore();
 
    // Read many lines into cache
    // 10 * 2 cold misses

@@ -20,6 +20,7 @@ while 1:
 
 #system("echo gdb ../pin-2.13-61206-gcc.4.4.7-linux/intel64/bin/pinbin $pid -s $cmd");
 #system("gnome-terminal --maximize -e 'sudo gdb ../pin-2.13-61206-gcc.4.4.7-linux/intel64/bin/pinbin $pid  $cmd' &");
-os.system("gnome-terminal --maximize -e 'gdb ../pin-2.13-61206-gcc.4.4.7-linux/intel64/bin/pinbin --command gdb_cmds' &");
+os.system("gnome-terminal --maximize -e 'gdb ../pin-2.13-62141-gcc.4.4.7-linux/intel64/bin/pinbin --command gdb_cmds' &")
 
-os.system("rm gdb_cmds");
+#os.system("sleep 3")
+#os.system("rm gdb_cmds")

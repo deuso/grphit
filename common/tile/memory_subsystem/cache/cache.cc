@@ -118,6 +118,10 @@ Cache::insertCacheLine(IntPtr inserted_address, CacheLineInfo* inserted_cache_li
    LOG_PRINT("insertCacheLine: Address(%#lx) start", inserted_address);
 
    CacheSet* set = getSet(inserted_address);
+   //if((_name=="L1-D")&&(_hash_fn->compute(0x909feec0) == _hash_fn->compute(inserted_address))&&(inserted_address!=0x909feec0))
+   //{
+   //   LOG_PRINT_WARNING("inserting address 0x%x, cstate %d, data@0x%x", inserted_address, inserted_cache_line_info->getCState(), fill_buf);
+   //}
 
    // Write into the data array
    set->insert(inserted_cache_line_info, fill_buf,
@@ -126,6 +130,10 @@ Cache::insertCacheLine(IntPtr inserted_address, CacheLineInfo* inserted_cache_li
    // Evicted address 
    *evicted_address = getAddressFromTag(evicted_cache_line_info->getTag());
 
+   //if((_name=="L1-D")&&(_hash_fn->compute(0x909feec0) == _hash_fn->compute(inserted_address))&&*eviction)
+   //{
+   //   LOG_PRINT_WARNING("evicting address 0x%x, cstate %d", *evicted_address, evicted_cache_line_info->getCState());
+   //}
    // Update Cache Line State Counters and address set for the evicted line
    if (*eviction)
    {

@@ -29,14 +29,14 @@ int main (int argc, char *argv[])
    UInt32 num_misses;
    // Write some value into this address
    num_misses = (core->initiateMemoryAccess(MemComponent::L1_DCACHE, Core::NONE, Core::WRITE, address, (Byte*) &written_val, sizeof(written_val), true)).first;
-   // LOG_ASSERT_ERROR(num_misses == 1, "num_misses(%u)", num_misses);
+    LOG_ASSERT_ERROR(num_misses == 1, "num_misses(%u)", num_misses);
    printf("Writing(%u) into address(%#lx) completed\n", written_val, address);
 
    // Read out the value
    printf("Reading from address(%#lx)\n", address);
    num_misses = (core->initiateMemoryAccess(MemComponent::L1_DCACHE, Core::NONE, Core::READ, address, (Byte*) &read_val, sizeof(read_val), true)).first;
    printf("Reading(%u) from address(%#lx) completed\n", read_val, address);
-   // LOG_ASSERT_ERROR(num_misses == 0, "num_misses(%u)", num_misses);
+    LOG_ASSERT_ERROR(num_misses == 0, "num_misses(%u)", num_misses);
    LOG_ASSERT_ERROR(read_val == 100, "read_val(%u)", read_val);
 
    Simulator::disablePerformanceModelsInCurrentProcess();

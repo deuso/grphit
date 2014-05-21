@@ -169,8 +169,19 @@ void SparseDirectoryCntlr::handleMsgFromL2Cache(tile_id_t sender, ShmemMsg* shme
          break;
       case ShmemMsg::SPDIR_WR_REP:
       {
-    	  //processNextReqFromQueue(address);
-         LOG_PRINT("SPDIR_WR_REP OK");
+    	  //if (_sparse_directory_req_queue.count(address) != 0)
+		  //{
+		  // ShmemReq* shmem_req = _sparse_directory_req_queue.front(address);
+		  // // Update times
+		  // shmem_req->updateTime(getShmemPerfModel()->getCurrTime());
+		  // getShmemPerfModel()->updateCurrTime(shmem_req->getTime());
+
+        // LOG_ASSERT_ERROR(shmem_req->getShmemMsg()->getType() == ShmemMsg::SH_REQ,
+        //            "Address(0x%x), Req(%u)",
+        //            address, shmem_req->getShmemMsg()->getType());
+        // LOG_PRINT("SPDIR_WR_REP OK");
+        // processShReqFromL1Cache(shmem_req);
+        //}
       }
       	  break;
       default:
@@ -551,6 +562,10 @@ void SparseDirectoryCntlr::processInvRepFromL1Cache(tile_id_t sender, ShmemMsg* 
    assert(directory_entry);
 
    DirectoryBlockInfo* directory_block_info = directory_entry->getDirectoryBlockInfo();
+   if(directory_block_info->getDState() != DirectoryState::SHARED)
+   {
+      LOG_PRINT_WARNING("INV_REP to dir with state %d", directory_block_info->getDState());
+   }
    assert(directory_block_info->getDState() == DirectoryState::SHARED);
 
    directory_entry->removeSharer(sender);
@@ -621,6 +636,8 @@ void SparseDirectoryCntlr::processFlushRepFromL1Cache(tile_id_t sender, ShmemMsg
         {
             // Write Data to L2
             sendDataToL2(address, shmem_msg->getDataBuf(), shmem_msg->isModeled());
+        		shmem_req->getShmemMsg()->setDataBuf(shmem_msg->getDataBuf());
+            shmem_req->getShmemMsg()->setDataLen(getCacheLineSize());
             processShReqFromL1Cache(shmem_req, shmem_msg->getDataBuf());
         }
         else // shmem_req->getShmemMsg()->getType() == ShmemMsg::NULLIFY_REQ
@@ -631,6 +648,7 @@ void SparseDirectoryCntlr::processFlushRepFromL1Cache(tile_id_t sender, ShmemMsg
         	else if(shmem_msg->getDataBuf()!=NULL)
         	{
         		shmem_req->getShmemMsg()->setDataBuf(shmem_msg->getDataBuf());
+            shmem_req->getShmemMsg()->setDataLen(getCacheLineSize());
         	}
             processNullifyReq(shmem_req);
         }
@@ -672,6 +690,9 @@ void SparseDirectoryCntlr::processWbRepFromL1Cache(tile_id_t sender, ShmemMsg* s
         LOG_ASSERT_ERROR(shmem_req->getShmemMsg()->getType() == ShmemMsg::SH_REQ,
                     "Address(0x%x), Req(%u)",
                     address, shmem_req->getShmemMsg()->getType());
+        //set buf to shmem_req
+        shmem_req->getShmemMsg()->setDataBuf(shmem_msg->getDataBuf());
+        shmem_req->getShmemMsg()->setDataLen(getCacheLineSize());
         processShReqFromL1Cache(shmem_req, shmem_msg->getDataBuf());
     }
     else

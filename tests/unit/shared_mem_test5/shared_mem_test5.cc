@@ -1,9 +1,10 @@
 #include "carbon_user.h"
 
 #include "simulator.h"
-#include "core_manager.h"
 #include "core.h"
-#include "memory_manager_base.h"
+#include "core.h"
+//#include "memory_manager_base.h"
+#include "memory_manager.h"
 
 #include "cache.h"
 #include "cache_base.h"
@@ -15,16 +16,17 @@
 #include "directory_block_info.h"
 #include "directory_state.h"
 #include "directory_entry_limited_broadcast.h"
+#include "directory_entry_fullmap.h"
 
 #include "mem_component.h"
 #include "address_home_lookup.h"
 
-#include "pr_l1_pr_l2_dram_directory_mosi/memory_manager.h"
-#include "pr_l1_pr_l2_dram_directory_mosi/l1_cache_cntlr.h"
-#include "pr_l1_pr_l2_dram_directory_mosi/l2_cache_cntlr.h"
-#include "pr_l1_pr_l2_dram_directory_mosi/dram_directory_cache.h"
-#include "pr_l1_pr_l2_dram_directory_mosi/dram_directory_cntlr.h"
-#include "pr_l1_pr_l2_dram_directory_mosi/dram_cntlr.h"
+#include "pr_l1_sh_l2_spdir_msi/memory_manager.h"
+#include "pr_l1_sh_l2_spdir_msi/l1_cache_cntlr.h"
+#include "pr_l1_sh_l2_spdir_msi/l2_cache_cntlr.h"
+#include "pr_l1_sh_l2_spdir_msi/dram_directory_cache.h"
+#include "pr_l1_sh_l2_spdir_msi/dram_directory_cntlr.h"
+#include "pr_l1_sh_l2_spdir_msi/dram_cntlr.h"
 
 #include "log.h"
 

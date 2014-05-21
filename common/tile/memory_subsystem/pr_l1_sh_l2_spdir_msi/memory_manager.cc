@@ -206,6 +206,8 @@ MemoryManager::MemoryManager(Tile* tile)
          L2_cache_tags_access_cycles,
          L2_cache_perf_model_type,
          L2_cache_track_miss_types);
+
+//LOG_PRINT_WARNING("=====Tile count: %d, DRAM count:%d=====", Config::getSingleton()->getApplicationTiles(), tile_list_with_dram_controllers.size());
 }
 
 MemoryManager::~MemoryManager()
@@ -247,12 +249,24 @@ MemoryManager::handleMsgFromNetwork(NetPacket& packet)
    MemComponent::Type receiver_mem_component = shmem_msg->getReceiverMemComponent();
    MemComponent::Type sender_mem_component = shmem_msg->getSenderMemComponent();
 
+   //if(shmem_msg->getAddress()==0xd36c00)
+   //{
+   //LOG_PRINT_WARNING("Time(%llu), Got Shmem Msg: type(%i), address(%#lx), sender_mem_component(%u), receiver_mem_component(%u), "
+   //          "sender(%i,%i), receiver(%i,%i), modeled(%s)", 
+   //          msg_time.toNanosec(), shmem_msg->getType(), shmem_msg->getAddress(),
+   //          sender_mem_component, receiver_mem_component,
+   //          sender.tile_id, sender.core_type, packet.receiver.tile_id, packet.receiver.core_type,
+   //          shmem_msg->isModeled() ? "TRUE" : "FALSE");
+   //}
+   //else
+   {
    LOG_PRINT("Time(%llu), Got Shmem Msg: type(%i), address(%#lx), sender_mem_component(%u), receiver_mem_component(%u), "
              "sender(%i,%i), receiver(%i,%i), modeled(%s)", 
              msg_time.toNanosec(), shmem_msg->getType(), shmem_msg->getAddress(),
              sender_mem_component, receiver_mem_component,
              sender.tile_id, sender.core_type, packet.receiver.tile_id, packet.receiver.core_type,
              shmem_msg->isModeled() ? "TRUE" : "FALSE");
+   }
 
    switch (receiver_mem_component)
    {
