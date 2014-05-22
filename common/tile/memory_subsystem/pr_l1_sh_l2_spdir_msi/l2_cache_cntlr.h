@@ -65,6 +65,7 @@ namespace PrL1ShL2MSI
 
       // Req list into the L2 cache
       HashMapList<IntPtr,ShmemReq*> _L2_cache_req_queue;
+      HashMapList<IntPtr,ShmemReq*> _sparse_directory_req_queue;
       // Evicted cache line map
       map<IntPtr,ShL2CacheLineInfo> _evicted_cache_line_map;
 

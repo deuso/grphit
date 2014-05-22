@@ -80,7 +80,7 @@ L2CacheCntlr::~L2CacheCntlr()
    delete _L2_cache;
    delete _L2_cache_replacement_policy_obj;
    delete _L2_cache_hash_fn_obj;
-   delete _spdir_cache
+   delete _spdir_cache;
 }
 
 DirectoryEntry* L2CacheCntlr::processDirectoryEntryAllocationReq(ShmemReq* shmem_req)
@@ -90,7 +90,7 @@ DirectoryEntry* L2CacheCntlr::processDirectoryEntryAllocationReq(ShmemReq* shmem
    Time msg_time = getShmemPerfModel()->getCurrTime();
 
    std::vector<DirectoryEntry*> replacement_candidate_list;
-   _sparse_directory_cache->getReplacementCandidates(address, replacement_candidate_list);
+   _spdir_cache->getReplacementCandidates(address, replacement_candidate_list);
 
    std::vector<DirectoryEntry*>::iterator it;
    std::vector<DirectoryEntry*>::iterator replacement_candidate = replacement_candidate_list.end();
@@ -113,11 +113,11 @@ DirectoryEntry* L2CacheCntlr::processDirectoryEntryAllocationReq(ShmemReq* shmem
    IntPtr replaced_address = (*replacement_candidate)->getAddress();
 
    // We get the entry with the lowest number of sharers
-   DirectoryEntry* directory_entry = _sparse_directory_cache->replaceDirectoryEntry(replaced_address, address);
+   DirectoryEntry* directory_entry = _spdir_cache->replaceDirectoryEntry(replaced_address, address);
 
    // The NULLIFY requests are always modeled in the network
    bool msg_modeled = true;
-   ShmemMsg nullify_msg(ShmemMsg::NULLIFY_REQ, MemComponent::SP_DIRECTORY, MemComponent::SP_DIRECTORY, requester, false,  replaced_address, msg_modeled);
+   ShmemMsg nullify_msg(ShmemMsg::NULLIFY_REQ, MemComponent::L2_CACHE, MemComponent::L2_CACHE, getTileId(), false,  replaced_address, msg_modeled);
 
    ShmemReq* nullify_req = new ShmemReq(&nullify_msg, msg_time);
    _sparse_directory_req_queue.enqueue(replaced_address, nullify_req);
@@ -138,38 +138,49 @@ L2CacheCntlr::getCacheLineInfo(IntPtr address, ShL2CacheLineInfo* L2_cache_line_
       // Read it from the cache
       _L2_cache->getCacheLineInfo(address, L2_cache_line_info);
 
-      DirectoryEntry* directory_entry = _sparse_directory_cache->getDirectoryEntry(address);
+      DirectoryEntry* directory_entry = _spdir_cache->getDirectoryEntry(address);
 
       bool cache_miss = (L2_cache_line_info->getCState() == CacheState::INVALID);
       bool spdir_miss = (directory_entry == NULL);
 
+      //some asserts to ensure the correctness of coherence protocol
       assert(!cache_miss || spdir_miss);//sp-hit,cache-miss not allowed
-      if(!cache_miss&&!spdir_miss)
+      if(!cache_miss && !spdir_miss)//both hit, l2 has ptr to dir-entry
          assert(L2_cache_line_info->getDirectoryEntry() == directory_entry);
-
-      if (directory_entry == NULL)
-      {
-         directory_entry = processDirectoryEntryAllocationReq(shmem_req);
-         //directory_entry->getDirectoryBlockInfo()->setInst(requester_mem_component==MemComponent::L1_ICACHE);
-      }
+      if(!cache_miss && spdir_miss)//l2-hit, sp-miss, l2's dir-ptr to null
+         assert(L2_cache_line_info->getDirectoryEntry() == NULL);
 
       if (update_miss_counters)
       {
          Core::mem_op_t mem_op_type = getMemOpTypeFromShmemMsgType(shmem_msg_type);
          _L2_cache->updateMissCounters(address, mem_op_type, cache_miss);
+         //_spdir_cache->updateXX();
       }
 
-      if (L2_cache_line_info->getCState() == CacheState::INVALID)
+
+      if (spdir_miss)
+      {
+         directory_entry = processDirectoryEntryAllocationReq(shmem_req);
+         //directory_entry->getDirectoryBlockInfo()->setInst(requester_mem_component==MemComponent::L1_ICACHE);
+      }
+
+
+      if (cache_miss)
       {
          if ((shmem_msg_type == ShmemMsg::EX_REQ) || (shmem_msg_type == ShmemMsg::SH_REQ))
          {
-            // allocate a cache line with garbage data
-            allocateCacheLine(address, L2_cache_line_info);
+            // allocate a cache line with garbage data (now the dir-entry exsists)
+            allocateCacheLine(address, L2_cache_line_info, directory_entry);
          }
          else
          {
             LOG_PRINT_ERROR("Unrecognized shmem msg type(%u)", shmem_msg_type);
          }
+      }
+      else
+      {
+         if(L2_cache_line_info->getDirectoryEntry() == NULL)
+            L2_cache_line_info->setDirectoryEntry(directory_entry);
       }
    }
    else // (present in the evicted map [_evicted_cache_line_map])
@@ -209,13 +220,9 @@ L2CacheCntlr::writeCacheLine(IntPtr address, Byte* data_buf)
 }
 
 void
-L2CacheCntlr::allocateCacheLine(IntPtr address, ShL2CacheLineInfo* L2_cache_line_info)
+L2CacheCntlr::allocateCacheLine(IntPtr address, ShL2CacheLineInfo* L2_cache_line_info, DirectoryEntry* directory_entry)
 {
-   // Create the new directory entry
-   DirectoryEntry* directory_entry = DirectoryEntry::create(PR_L1_SH_L2_MSI,
-                                                            L2DirectoryCfg::getDirectoryType(),
-                                                            L2DirectoryCfg::getMaxHWSharers(),
-                                                            L2DirectoryCfg::getMaxNumSharers());
+   assert(directory_entry!=NULL);
    // Construct meta-data info about L2 cache line
    *L2_cache_line_info = ShL2CacheLineInfo(_L2_cache->getTag(address), directory_entry);
    // Transition to a new cache state
@@ -542,6 +549,7 @@ L2CacheCntlr::processExReqFromL1Cache(ShmemReq* shmem_req, Byte* data_buf, bool 
       // Data need not be fetched from DRAM
       // The cache line is present in the L2 cache
       DirectoryEntry* directory_entry = L2_cache_line_info.getDirectoryEntry();
+      assert(directory_entry != NULL);
       DirectoryState::Type curr_dstate = directory_entry->getDirectoryBlockInfo()->getDState();
 
       switch (curr_dstate)
@@ -664,6 +672,7 @@ L2CacheCntlr::processShReqFromL1Cache(ShmemReq* shmem_req, Byte* data_buf, bool 
       // Data need not be fetched from DRAM
       // The cache line is present in the L2 cache
       DirectoryEntry* directory_entry = L2_cache_line_info.getDirectoryEntry();
+      assert(directory_entry != NULL);
       DirectoryState::Type curr_dstate = directory_entry->getDirectoryBlockInfo()->getDState();
 
       switch (curr_dstate)
