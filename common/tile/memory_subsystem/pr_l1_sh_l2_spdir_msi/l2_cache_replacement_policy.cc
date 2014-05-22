@@ -8,7 +8,7 @@ namespace PrL1ShL2SpDirMSI
 {
 
 L2CacheReplacementPolicy::L2CacheReplacementPolicy(UInt32 cache_size, UInt32 associativity, UInt32 cache_line_size,
-                                                   HashMapList<IntPtr,ShmemReq*>& L2_cache_req_list, SparseDirectoryCntlr* sp_dir)
+                                                   HashMapList<IntPtr,ShmemReq*>& L2_cache_req_list, DirectoryCache* sp_dir)
    : CacheReplacementPolicy(cache_size, associativity, cache_line_size)
    , _L2_cache_req_list(L2_cache_req_list)
    , _sp_dir(sp_dir)
@@ -33,7 +33,7 @@ L2CacheReplacementPolicy::getReplacementWay(CacheLineInfo** cache_line_info_arra
       {
          return i;
       }
-      else if(L2_cache_line_info->getSpDir())
+      else if(L2_cache_line_info->getDirectoryEntry())
       {
          IntPtr address = getAddressFromTag(L2_cache_line_info->getTag());
 
@@ -41,7 +41,7 @@ L2CacheReplacementPolicy::getReplacementWay(CacheLineInfo** cache_line_info_arra
          //1.valid but not shared
          //2.valid with least sharing count(Coordinate with sp-dir eviction)
          //DirectoryEntry* directory_entry = L2_cache_line_info->getDirectoryEntry();
-         DirectoryEntry* directory_entry = _sp_dir->getSparseDirectoryCache()->getDirectoryEntry(address);
+         DirectoryEntry* directory_entry = _sp_dir->getDirectoryEntry(address);
          if (directory_entry->getNumSharers() < min_num_sharers && 
              _L2_cache_req_list.empty(address))
          {
@@ -63,7 +63,7 @@ L2CacheReplacementPolicy::getReplacementWay(CacheLineInfo** cache_line_info_arra
          ShL2CacheLineInfo* L2_cache_line_info = dynamic_cast<ShL2CacheLineInfo*>(cache_line_info_array[i]);
          assert(L2_cache_line_info->getCState() != CacheState::INVALID);
          IntPtr address = getAddressFromTag(L2_cache_line_info->getTag());
-         DirectoryEntry* directory_entry = _sp_dir->getSparseDirectoryCache()->getDirectoryEntry(address);
+         DirectoryEntry* directory_entry = _sp_dir->getDirectoryEntry(address);
          assert(_L2_cache_req_list.count(address) > 0);
          fprintf(stderr, "i(%u), Address(%#lx), CState(%u), DState(%u), Num Waiters(%u)\n",
                  i, address, L2_cache_line_info->getCState(),

@@ -36,6 +36,7 @@ public:
    Directory* getDirectory() { return _directory; }
    DirectoryEntry* getDirectoryEntry(IntPtr address);
    DirectoryEntry* replaceDirectoryEntry(IntPtr replaced_address, IntPtr address);
+   DirectoryType getDirectoryType() { return _directory_type; }
    void invalidateDirectoryEntry(IntPtr address);
    void getReplacementCandidates(IntPtr address, vector<DirectoryEntry*>& replacement_candidate_list);
 

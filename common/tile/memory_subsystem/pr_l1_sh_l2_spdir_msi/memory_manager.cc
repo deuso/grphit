@@ -161,16 +161,6 @@ MemoryManager::MemoryManager(Tile* tile)
    //UInt32 num_memory_controllers = tile_list_with_dram_controllers.size();
    UInt32 num_spdir_controllers = tile_list.size();
    
-   //sparse dir here==================
-   _sp_dir= new SparseDirectoryCntlr(this,
-         sparse_directory_total_entries_str,
-         sparse_directory_associativity,
-         getCacheLineSize(),
-         sparse_directory_max_num_sharers,
-         sparse_directory_max_hw_sharers,
-         sparse_directory_type_str,
-         sparse_directory_access_cycles_str,
-         num_spdir_controllers);
    
    // Instantiate L1 cache cntlr
    _L1_cache_cntlr = new L1CacheCntlr(this,
@@ -196,7 +186,6 @@ MemoryManager::MemoryManager(Tile* tile)
    // Instantiate L2 cache cntlr
    _L2_cache_cntlr = new L2CacheCntlr(this,
          _dram_home_lookup,
-         _sp_dir,
          getCacheLineSize(),
          L2_cache_size,
          L2_cache_associativity,
@@ -205,9 +194,16 @@ MemoryManager::MemoryManager(Tile* tile)
          L2_cache_data_access_cycles,
          L2_cache_tags_access_cycles,
          L2_cache_perf_model_type,
-         L2_cache_track_miss_types);
+         L2_cache_track_miss_types,
 
-//LOG_PRINT_WARNING("=====Tile count: %d, DRAM count:%d=====", Config::getSingleton()->getApplicationTiles(), tile_list_with_dram_controllers.size());
+         sparse_directory_total_entries_str,
+         sparse_directory_associativity,
+         sparse_directory_max_num_sharers,
+         sparse_directory_max_hw_sharers,
+         sparse_directory_type_str,
+         sparse_directory_access_cycles_str,
+         num_spdir_controllers);
+
 }
 
 MemoryManager::~MemoryManager()
@@ -223,7 +219,6 @@ MemoryManager::~MemoryManager()
    {
       delete _dram_cntlr;
    }
-   delete _sp_dir;
 }
 
 bool
@@ -408,6 +403,7 @@ MemoryManager::enableModels()
    _L1_cache_cntlr->getL1ICache()->enable();
    _L1_cache_cntlr->getL1DCache()->enable();
    _L2_cache_cntlr->getL2Cache()->enable();
+   _L2_cache_cntlr->getDirectoryCache()->enable();
 
    _L2_cache_cntlr->enable();
 
@@ -425,6 +421,7 @@ MemoryManager::disableModels()
    _L1_cache_cntlr->getL1ICache()->disable();
    _L1_cache_cntlr->getL1DCache()->disable();
    _L2_cache_cntlr->getL2Cache()->disable();
+   _L2_cache_cntlr->getDirectoryCache()->disable();
    _L2_cache_cntlr->disable();
 
    if (_dram_cntlr_present)
@@ -444,6 +441,8 @@ MemoryManager::outputSummary(std::ostream &os, const Time& target_completion_tim
    _L1_cache_cntlr->getL1ICache()->outputSummary(os, target_completion_time);
    _L1_cache_cntlr->getL1DCache()->outputSummary(os, target_completion_time);
    _L2_cache_cntlr->getL2Cache()->outputSummary(os, target_completion_time);
+   os << "Sparse Directory Cache Summary:\n";
+   _L2_cache_cntlr->getDirectoryCache()->outputSummary(os);
 
    if (_dram_cntlr_present)
    {
@@ -461,6 +460,7 @@ MemoryManager::computeEnergy(const Time& curr_time)
    _L1_cache_cntlr->getL1ICache()->computeEnergy(curr_time);
    _L1_cache_cntlr->getL1DCache()->computeEnergy(curr_time);
    _L2_cache_cntlr->getL2Cache()->computeEnergy(curr_time);
+   //_L2_cache_cntlr->getDirectoryCache()->computeEnergy(curr_time);
 }
 
 double
@@ -522,6 +522,7 @@ MemoryManager::setDVFS(module_t module_type, double frequency, voltage_option_t 
 
       case L2_CACHE:
          rc = getL2Cache()->setDVFS(frequency, voltage_flag, curr_time);
+         rc = getDirectoryCache()->setDVFS(frequency, voltage_flag, curr_time);
          break;
 
       default:

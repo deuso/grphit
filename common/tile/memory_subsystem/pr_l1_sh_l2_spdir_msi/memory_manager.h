@@ -17,7 +17,6 @@ using std::ofstream;
 #include "shmem_perf_model.h"
 #include "network.h"
 #include "dvfs.h"
-#include "sparse_directory_cntlr.h"
 
 namespace PrL1ShL2SpDirMSI
 {
@@ -32,7 +31,7 @@ namespace PrL1ShL2SpDirMSI
       Cache* getL1ICache() { return _L1_cache_cntlr->getL1ICache(); }
       Cache* getL1DCache() { return _L1_cache_cntlr->getL1DCache(); }
       Cache* getL2Cache() { return _L2_cache_cntlr->getL2Cache(); }
-      DirectoryCache* getSparseDirectoryCache() { return _sp_dir->getSparseDirectoryCache(); }
+      DirectoryCache* getDirectoryCache() { return _L2_cache_cntlr->getDirectoryCache(); }
       DramCntlr* getDramCntlr() { return _dram_cntlr; }
       bool isDramCntlrPresent() { return _dram_cntlr_present; }
       
@@ -67,7 +66,7 @@ namespace PrL1ShL2SpDirMSI
       L1CacheCntlr* _L1_cache_cntlr;
       L2CacheCntlr* _L2_cache_cntlr;
       DramCntlr* _dram_cntlr;
-      SparseDirectoryCntlr* _sp_dir;
+      //SparseDirectoryCntlr* _sp_dir;
       bool _dram_cntlr_present;
 
       // Home Lookups

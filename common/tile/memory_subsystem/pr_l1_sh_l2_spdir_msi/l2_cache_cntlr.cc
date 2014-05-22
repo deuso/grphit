@@ -1,7 +1,7 @@
 #include "l2_cache_cntlr.h"
 #include "memory_manager.h"
 #include "directory_type.h"
-#include "l2_directory_cfg.h"
+//#include "l2_directory_cfg.h"
 #include "directory_entry.h"
 #include "l2_cache_replacement_policy.h"
 #include "l2_cache_hash_fn.h"
@@ -10,7 +10,7 @@
 
 #define TYPE(shmem_req)    (shmem_req->getShmemMsg()->getType())
 
-namespace PrL1ShL2MSI
+namespace PrL1ShL2SpDirMSI
 {
 
 L2CacheCntlr::L2CacheCntlr(MemoryManager* memory_manager,
@@ -36,8 +36,20 @@ L2CacheCntlr::L2CacheCntlr(MemoryManager* memory_manager,
    , _dram_home_lookup(dram_home_lookup)
    , _enabled(false)
 {
+   _spdir_cache = new DirectoryCache(_memory_manager->getTile(),
+         PR_L1_SH_L2_SPDIR_MSI,
+         sparse_directory_type_str,
+         sparse_directory_total_entries_str,
+         sparse_directory_associativity,
+         cache_line_size,
+         sparse_directory_max_hw_sharers,
+         sparse_directory_max_num_sharers,
+         num_dir_cntlrs,
+         sparse_directory_access_cycles_str,
+         getShmemPerfModel());
+
    _L2_cache_replacement_policy_obj =
-      new L2CacheReplacementPolicy(L2_cache_size, L2_cache_associativity, cache_line_size, _L2_cache_req_queue);
+      new L2CacheReplacementPolicy(L2_cache_size, L2_cache_associativity, cache_line_size, _L2_cache_req_queue, _spdir_cache);
    _L2_cache_hash_fn_obj = new L2CacheHashFn(L2_cache_size, L2_cache_associativity, cache_line_size);
 
    // L2 cache
@@ -58,17 +70,6 @@ L2CacheCntlr::L2CacheCntlr(MemoryManager* memory_manager,
          L2_cache_track_miss_types,
          getShmemPerfModel());
 
-   _spdir_cache = new DirectoryCache(_memory_manager->getTile(),
-         PR_L1_SH_L2_SPDIR_MSI,
-         sparse_directory_type_str,
-         sparse_directory_total_entries_str,
-         sparse_directory_associativity,
-         cache_line_size,
-         sparse_directory_max_hw_sharers,
-         sparse_directory_max_num_sharers,
-         num_dir_cntlrs,
-         sparse_directory_access_cycles_str,
-         getShmemPerfModel());
 }
 
 L2CacheCntlr::~L2CacheCntlr()
@@ -83,10 +84,10 @@ L2CacheCntlr::~L2CacheCntlr()
    delete _spdir_cache;
 }
 
-DirectoryEntry* L2CacheCntlr::processDirectoryEntryAllocationReq(ShmemReq* shmem_req)
+DirectoryEntry* L2CacheCntlr::processDirectoryEntryAllocationReq(IntPtr address)
 {
-   IntPtr address = shmem_req->getShmemMsg()->getAddress();
-   tile_id_t requester = shmem_req->getShmemMsg()->getRequester();
+   //IntPtr address = shmem_req->getShmemMsg()->getAddress();
+   //tile_id_t requester = shmem_req->getShmemMsg()->getRequester();
    Time msg_time = getShmemPerfModel()->getCurrTime();
 
    std::vector<DirectoryEntry*> replacement_candidate_list;
@@ -100,7 +101,7 @@ DirectoryEntry* L2CacheCntlr::processDirectoryEntryAllocationReq(ShmemReq* shmem
                   ((*replacement_candidate)->getNumSharers() > (*it)->getNumSharers()) 
            )
                &&
-               (_sparse_directory_req_queue.count((*it)->getAddress()) == 0)
+               (_L2_cache_req_queue.count((*it)->getAddress()) == 0)
          )
       {
          replacement_candidate = it;
@@ -119,22 +120,28 @@ DirectoryEntry* L2CacheCntlr::processDirectoryEntryAllocationReq(ShmemReq* shmem
    bool msg_modeled = true;
    ShmemMsg nullify_msg(ShmemMsg::NULLIFY_REQ, MemComponent::L2_CACHE, MemComponent::L2_CACHE, getTileId(), false,  replaced_address, msg_modeled);
 
-   ShmemReq* nullify_req = new ShmemReq(&nullify_msg, msg_time);
-   _sparse_directory_req_queue.enqueue(replaced_address, nullify_req);
+   ShmemReq* sp_nullify_req = new ShmemReq(&nullify_msg, msg_time);
+   //_sparse_directory_req_queue.enqueue(replaced_address, sp_nullify_req);
 
-   assert(_sparse_directory_req_queue.count(replaced_address) == 1);
-   processNullifyReq(nullify_req);
+   // Insert the nullify_req into the set of requests to be processed
+   _L2_cache_req_queue.enqueue(replaced_address, sp_nullify_req);
+   
+   // Insert the evicted cache line info into the evicted cache line map for future reference
+   //_evicted_cache_line_map.insert(make_pair(replaced_address, evicted_cache_line_info));
+
+   assert(_L2_cache_req_queue.count(replaced_address) == 1);
+   processNullifyReq(sp_nullify_req, NULL);
 
    return directory_entry;
 }
 
-void
-L2CacheCntlr::getCacheLineInfo(IntPtr address, ShL2CacheLineInfo* L2_cache_line_info, ShmemMsg::Type shmem_msg_type, bool update_miss_counters)
+bool
+L2CacheCntlr::getCacheLineInfo(IntPtr address, ShL2CacheLineInfo* L2_cache_line_info, ShmemMsg::Type shmem_msg_type, bool first_call)
 {
    map<IntPtr,ShL2CacheLineInfo>::iterator it = _evicted_cache_line_map.find(address);
    if (it == _evicted_cache_line_map.end())
    {
-      assert(shmem_msg_type != ShmemMsg::NULLIFY_REQ);
+      //assert(shmem_msg_type != ShmemMsg::NULLIFY_REQ);
       // Read it from the cache
       _L2_cache->getCacheLineInfo(address, L2_cache_line_info);
 
@@ -143,27 +150,37 @@ L2CacheCntlr::getCacheLineInfo(IntPtr address, ShL2CacheLineInfo* L2_cache_line_
       bool cache_miss = (L2_cache_line_info->getCState() == CacheState::INVALID);
       bool spdir_miss = (directory_entry == NULL);
 
+      if((shmem_msg_type == ShmemMsg::INV_REP) || (shmem_msg_type == ShmemMsg::FLUSH_REP) || (shmem_msg_type == ShmemMsg::WB_REP))
+         assert(!cache_miss && !spdir_miss);
+         
+      if(shmem_msg_type == ShmemMsg::NULLIFY_REQ)//SP_NULLIFY_REQ
+         assert(!cache_miss && !spdir_miss);
       //some asserts to ensure the correctness of coherence protocol
-      assert(!cache_miss || spdir_miss);//sp-hit,cache-miss not allowed
+      //assert(!cache_miss || spdir_miss);//sp-hit,cache-miss not allowed
+      assert(first_call || (!first_call && !cache_miss && !spdir_miss));//non first_call should hit both
       if(!cache_miss && !spdir_miss)//both hit, l2 has ptr to dir-entry
-         assert(L2_cache_line_info->getDirectoryEntry() == directory_entry);
+         if(L2_cache_line_info->getDirectoryEntry() != directory_entry)
+         {
+            assert(L2_cache_line_info->getDirectoryEntry()==NULL);
+            //LOG_ASSERT_WARNING(L2_cache_line_info->getDirectoryEntry()!=NULL, "l2 dir entry null, sp-dir entry 0x%x", directory_entry);
+            //rebuild connection of l2 entry and sp-dir entry
+            L2_cache_line_info->setDirectoryEntry(directory_entry);
+         }
       if(!cache_miss && spdir_miss)//l2-hit, sp-miss, l2's dir-ptr to null
          assert(L2_cache_line_info->getDirectoryEntry() == NULL);
 
-      if (update_miss_counters)
+      if (first_call)
       {
          Core::mem_op_t mem_op_type = getMemOpTypeFromShmemMsgType(shmem_msg_type);
          _L2_cache->updateMissCounters(address, mem_op_type, cache_miss);
          //_spdir_cache->updateXX();
       }
 
-
       if (spdir_miss)
       {
-         directory_entry = processDirectoryEntryAllocationReq(shmem_req);
+         directory_entry = processDirectoryEntryAllocationReq(address);
          //directory_entry->getDirectoryBlockInfo()->setInst(requester_mem_component==MemComponent::L1_ICACHE);
       }
-
 
       if (cache_miss)
       {
@@ -182,16 +199,18 @@ L2CacheCntlr::getCacheLineInfo(IntPtr address, ShL2CacheLineInfo* L2_cache_line_
          if(L2_cache_line_info->getDirectoryEntry() == NULL)
             L2_cache_line_info->setDirectoryEntry(directory_entry);
       }
+      return true;
    }
    else // (present in the evicted map [_evicted_cache_line_map])
    {
-      assert(!update_miss_counters);
+      assert(!first_call);
       // Read it from the evicted cache line map
       L2_cache_line_info->assign(&it->second);
+      return false;
    }
 }
 
-void
+bool
 L2CacheCntlr::setCacheLineInfo(IntPtr address, ShL2CacheLineInfo* L2_cache_line_info)
 {
    map<IntPtr,ShL2CacheLineInfo>::iterator it = _evicted_cache_line_map.find(address);
@@ -199,11 +218,13 @@ L2CacheCntlr::setCacheLineInfo(IntPtr address, ShL2CacheLineInfo* L2_cache_line_
    {
       // Write it to the cache
       _L2_cache->setCacheLineInfo(address, L2_cache_line_info);
+      return true;
    }
    else
    {
       // Write it to the evicted cache line map
       (it->second).assign(L2_cache_line_info);
+      return false;
    }
 }
 
@@ -245,14 +266,23 @@ L2CacheCntlr::allocateCacheLine(IntPtr address, ShL2CacheLineInfo* L2_cache_line
       LOG_ASSERT_ERROR(evicted_cache_line_info.getCState() == CacheState::CLEAN || evicted_cache_line_info.getCState() == CacheState::DIRTY,
                        "Cache Line State(%u)", evicted_cache_line_info.getCState());
       __attribute__((unused)) DirectoryEntry* evicted_directory_entry = evicted_cache_line_info.getDirectoryEntry();
-      LOG_ASSERT_ERROR(evicted_directory_entry, "Cant find directory entry for address(%#lx)", evicted_address);
+      //LOG_ASSERT_ERROR(evicted_directory_entry, "Cant find directory entry for address(%#lx)", evicted_address);
+      //LOG_ASSERT_WARNING(evicted_directory_entry, "No directory entry in eviction of address(%#lx) @L2", evicted_address);
 
       bool msg_modeled = Config::getSingleton()->isApplicationTile(getTileId());
       Time eviction_time = getShmemPerfModel()->getCurrTime();
       
-      LOG_PRINT("Eviction: Address(%#lx), Cache State(%u), Directory State(%u), Num Sharers(%i)",
-                evicted_address, evicted_cache_line_info.getCState(),
-                evicted_directory_entry->getDirectoryBlockInfo()->getDState(), evicted_directory_entry->getNumSharers());
+      if(evicted_directory_entry)
+      {
+         LOG_PRINT("Eviction: Address(%#lx), Cache State(%u), Directory State(%u), Num Sharers(%i)",
+                   evicted_address, evicted_cache_line_info.getCState(),
+                   evicted_directory_entry->getDirectoryBlockInfo()->getDState(), evicted_directory_entry->getNumSharers());
+      }
+      else
+      {
+         LOG_PRINT("Eviction: Address(%#lx), Cache State(%u), No Directory Entry.",
+                   evicted_address, evicted_cache_line_info.getCState());
+      }
 
       // Create a nullify req and add it onto the queue for processing
       ShmemMsg nullify_msg(ShmemMsg::NULLIFY_REQ, MemComponent::L2_CACHE, MemComponent::L2_CACHE,
@@ -311,6 +341,7 @@ L2CacheCntlr::handleMsgFromL1Cache(tile_id_t sender, ShmemMsg* shmem_msg)
    {
       // Get the ShL2CacheLineInfo object
       ShL2CacheLineInfo L2_cache_line_info;
+      //TODO:need to allocate dir-entry if icache-rep?
       getCacheLineInfo(address, &L2_cache_line_info, shmem_msg_type);
       assert(L2_cache_line_info.isValid());
 
@@ -452,12 +483,17 @@ L2CacheCntlr::processNullifyReq(ShmemReq* nullify_req, Byte* data_buf)
 
    // get cache line info 
    ShL2CacheLineInfo L2_cache_line_info;
-   getCacheLineInfo(address, &L2_cache_line_info, ShmemMsg::NULLIFY_REQ);
+   bool sp_nullify = getCacheLineInfo(address, &L2_cache_line_info, ShmemMsg::NULLIFY_REQ);
 
    assert(L2_cache_line_info.getCState() != CacheState::INVALID);
 
    DirectoryEntry* directory_entry = L2_cache_line_info.getDirectoryEntry();
-   DirectoryState::Type curr_dstate = directory_entry->getDirectoryBlockInfo()->getDState();
+   DirectoryState::Type curr_dstate;
+   if(directory_entry)
+      curr_dstate = directory_entry->getDirectoryBlockInfo()->getDState();
+   else
+      curr_dstate = DirectoryState::UNCACHED;//not in sp-dir
+
 
    // Is the request completely processed or waiting for acknowledgements or data?
    bool completed = false;
@@ -491,7 +527,7 @@ L2CacheCntlr::processNullifyReq(ShmemReq* nullify_req, Byte* data_buf)
                              requester, msg_modeled);
 
          // Send line to DRAM_CNTLR if dirty
-         if ((L2_cache_line_info.getCState() == CacheState::DIRTY) && data_buf)
+         if ((L2_cache_line_info.getCState() == CacheState::DIRTY) && data_buf && !sp_nullify)
             storeDataInDram(address, data_buf, requester, msg_modeled);
       }
       break;
@@ -499,7 +535,7 @@ L2CacheCntlr::processNullifyReq(ShmemReq* nullify_req, Byte* data_buf)
    case DirectoryState::UNCACHED:
       {
          // Send line to DRAM_CNTLR if dirty
-         if ((L2_cache_line_info.getCState() == CacheState::DIRTY) && data_buf)
+         if ((L2_cache_line_info.getCState() == CacheState::DIRTY) && data_buf && !sp_nullify)
             storeDataInDram(address, data_buf, requester, msg_modeled);
 
          // Set completed to true
@@ -514,13 +550,26 @@ L2CacheCntlr::processNullifyReq(ShmemReq* nullify_req, Byte* data_buf)
 
    if (completed)
    {
-      // Write the cache line info back
-      setCacheLineInfo(address, &L2_cache_line_info);
-
-      // Delete the directory entry
-      delete L2_cache_line_info.getDirectoryEntry();
-      // Remove the address from the evicted map since its handling is complete
-      _evicted_cache_line_map.erase(address);
+      if(sp_nullify)
+      {
+         //Set dir entry to invalid
+         L2_cache_line_info.setDirectoryEntry(NULL);
+         bool not_in_evict_map = setCacheLineInfo(address, &L2_cache_line_info);
+         assert(not_in_evict_map);
+         _spdir_cache->invalidateDirectoryEntry(address);
+      }
+      else
+      {
+         if(L2_cache_line_info.getDirectoryEntry())
+         {
+            L2_cache_line_info.getDirectoryEntry()->setAddress(INVALID_ADDRESS);
+         }
+         bool not_in_evict_map = setCacheLineInfo(address, &L2_cache_line_info);
+         assert(!not_in_evict_map);
+         // Remove the address from the evicted map since its handling is complete
+         _evicted_cache_line_map.erase(address);
+         //_spdir_cache->invalidateDirectoryEntry(address);
+      }
 
       // Process the next request if completed
       processNextReqFromL1Cache(address);
@@ -944,7 +993,8 @@ L2CacheCntlr::sendInvalidationMsg(ShmemMsg::Type requester_msg_type,
 {
    if (all_tiles_sharers)
    {
-      bool reply_expected = (L2DirectoryCfg::getDirectoryType() == LIMITED_BROADCAST);
+      //bool reply_expected = (L2DirectoryCfg::getDirectoryType() == LIMITED_BROADCAST);
+      bool reply_expected = (_spdir_cache->getDirectoryType() == LIMITED_BROADCAST);
       // Broadcast invalidation request to all tiles 
       // (irrespective of whether they are sharers or not)
       ShmemMsg shmem_msg(ShmemMsg::INV_REQ, MemComponent::L2_CACHE, receiver_mem_component, 

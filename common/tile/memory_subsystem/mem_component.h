@@ -14,7 +14,6 @@ public:
       L1_DCACHE,
       L2_CACHE,
       DRAM_DIRECTORY,
-      SP_DIRECTORY,
       DRAM_CNTLR
    };
 

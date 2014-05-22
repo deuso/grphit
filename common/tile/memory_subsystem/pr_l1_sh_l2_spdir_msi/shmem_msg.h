@@ -31,16 +31,9 @@ public:
       DRAM_FETCH_REP,
       // Nullify req
       NULLIFY_REQ,
-      // SpDir-L2 requests
-      SPDIR_RD_REQ,
-      SPDIR_WR_REQ,
-      SPDIR_RD_REP,
-      SPDIR_WR_REP,
+      SP_NULLIFY_REQ,
 
-      L2_SPDIR_REQ,
-      L2_SPDIR_REP,
-
-      MAX_MSG_TYPE = L2_SPDIR_REP,
+      MAX_MSG_TYPE = SP_NULLIFY_REQ,
       NUM_MSG_TYPES = MAX_MSG_TYPE - MIN_MSG_TYPE + 1
    }; 
 

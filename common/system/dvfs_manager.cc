@@ -510,8 +510,6 @@ DVFSManager::convertToModule(MemComponent::Type component){
          return L2_CACHE;
       case MemComponent::DRAM_DIRECTORY:
          return DIRECTORY;
-      case MemComponent::SP_DIRECTORY:
-         return DIRECTORY;
       default:
          LOG_PRINT_ERROR("Unknown memory component.");
          break;

@@ -1,7 +1,7 @@
 #pragma once
 
 // Forward declarations
-namespace PrL1ShL2MSI
+namespace PrL1ShL2SpDirMSI
 {
    class MemoryManager;
 }
@@ -21,8 +21,9 @@ using std::map;
 #include "shmem_perf_model.h"
 #include "cache_replacement_policy.h"
 #include "cache_hash_fn.h"
+#include "directory_cache.h"
 
-namespace PrL1ShL2MSI
+namespace PrL1ShL2SpDirMSI
 {
    class L2CacheCntlr
    {
@@ -37,10 +38,19 @@ namespace PrL1ShL2MSI
                    UInt32 L2_cache_data_access_cycles,
                    UInt32 L2_cache_tags_access_cycles,
                    string L2_cache_perf_model_type,
-                   bool L2_cache_track_miss_types);
+                   bool L2_cache_track_miss_types,
+
+                   string sparse_directory_total_entries_str,
+                   UInt32 sparse_directory_associativity,
+                   UInt32 sparse_directory_max_num_sharers,
+                   UInt32 sparse_directory_max_hw_sharers,
+                   string sparse_directory_type_str,
+                   string sparse_directory_access_cycles_str,
+                   UInt32 num_dir_cntlrs);
       ~L2CacheCntlr();
 
       Cache* getL2Cache() { return _L2_cache; }
+      DirectoryCache* getDirectoryCache() { return _spdir_cache; }
 
       // Handle message from L1 Cache
       void handleMsgFromL1Cache(tile_id_t sender, ShmemMsg* shmem_msg);
@@ -56,6 +66,7 @@ namespace PrL1ShL2MSI
       // Data Members
       MemoryManager* _memory_manager;
       Cache* _L2_cache;
+      DirectoryCache* _spdir_cache;
       CacheReplacementPolicy* _L2_cache_replacement_policy_obj;
       CacheHashFn* _L2_cache_hash_fn_obj;
       AddressHomeLookup* _dram_home_lookup;
@@ -69,13 +80,14 @@ namespace PrL1ShL2MSI
       // Evicted cache line map
       map<IntPtr,ShL2CacheLineInfo> _evicted_cache_line_map;
 
+      DirectoryEntry* processDirectoryEntryAllocationReq(IntPtr address);
       // L2 cache operations
-      void getCacheLineInfo(IntPtr address, ShL2CacheLineInfo* L2_cache_line_info,
-                            ShmemMsg::Type shmem_msg_type, bool update_miss_counters = false);
-      void setCacheLineInfo(IntPtr address, ShL2CacheLineInfo* L2_cache_line_info);
+      bool getCacheLineInfo(IntPtr address, ShL2CacheLineInfo* L2_cache_line_info,
+                            ShmemMsg::Type shmem_msg_type, bool first_call= false);
+      bool setCacheLineInfo(IntPtr address, ShL2CacheLineInfo* L2_cache_line_info);
       void readCacheLine(IntPtr address, Byte* data_buf);
       void writeCacheLine(IntPtr address, Byte* data_buf);
-      void allocateCacheLine(IntPtr address, ShL2CacheLineInfo* L2_cache_line_info);
+      void allocateCacheLine(IntPtr address, ShL2CacheLineInfo* L2_cache_line_info, DirectoryEntry* directory_entry);
 
       // Process Request to invalidate the sharers of a cache line
       void processNullifyReq(ShmemReq* nullify_req, Byte* data_buf);

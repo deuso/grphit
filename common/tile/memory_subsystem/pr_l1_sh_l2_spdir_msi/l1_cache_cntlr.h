@@ -59,7 +59,7 @@ namespace PrL1ShL2SpDirMSI
             Byte* data_buf, UInt32 data_length,
             bool modeled);
       void handleMsgFromCore(ShmemMsg* shmem_msg);
-      void handleMsgFromSpDir(tile_id_t sender, ShmemMsg* shmem_msg);
+      void handleMsgFromL2Cache(tile_id_t sender, ShmemMsg* shmem_msg);
 
    private:
       MemoryManager* _memory_manager;
@@ -69,7 +69,7 @@ namespace PrL1ShL2SpDirMSI
       CacheReplacementPolicy* _L1_dcache_replacement_policy_obj;
       CacheHashFn* _L1_icache_hash_fn_obj;
       CacheHashFn* _L1_dcache_hash_fn_obj;
-      AddressHomeLookup* _SpDir_home_lookup;
+      AddressHomeLookup* _L2_cache_home_lookup;
 
       // Outstanding msg info
       Time _outstanding_shmem_msg_time;
@@ -94,14 +94,14 @@ namespace PrL1ShL2SpDirMSI
       ShmemMsg::Type getShmemMsgType(Core::mem_op_t mem_op_type);
 
       // Specific msg handling
-      void processExRepFromSpDir(tile_id_t sender, ShmemMsg* shmem_msg);
-      void processShRepFromSpDir(tile_id_t sender, ShmemMsg* shmem_msg);
-      void processUpgradeRepFromSpDir(tile_id_t sender, ShmemMsg* shmem_msg);
-      void processInvReqFromSpDir(tile_id_t sender, ShmemMsg* shmem_msg);
-      void processFlushReqFromSpDir(tile_id_t sender, ShmemMsg* shmem_msg);
-      void processWbReqFromSpDir(tile_id_t sender, ShmemMsg* shmem_msg);
+      void processExRepFromL2Cache(tile_id_t sender, ShmemMsg* shmem_msg);
+      void processShRepFromL2Cache(tile_id_t sender, ShmemMsg* shmem_msg);
+      void processUpgradeRepFromL2Cache(tile_id_t sender, ShmemMsg* shmem_msg);
+      void processInvReqFromL2Cache(tile_id_t sender, ShmemMsg* shmem_msg);
+      void processFlushReqFromL2Cache(tile_id_t sender, ShmemMsg* shmem_msg);
+      void processWbReqFromL2Cache(tile_id_t sender, ShmemMsg* shmem_msg);
 
-      tile_id_t getSpDirHome(IntPtr address);
+      tile_id_t getL2CacheHome(IntPtr address);
 
       // Utilities
       tile_id_t getTileId();
