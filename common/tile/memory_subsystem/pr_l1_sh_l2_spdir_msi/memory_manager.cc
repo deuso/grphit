@@ -135,11 +135,13 @@ MemoryManager::MemoryManager(Tile* tile)
    
    _cache_line_size = L1_icache_line_size;
 
-   UInt32 dram_home_lookup_param = ceilLog2(_cache_line_size);
+   //UInt32 dram_home_lookup_param = ceilLog2(_cache_line_size);
+   UInt32 dram_home_lookup_param = 10; //1KB interleave
    std::vector<tile_id_t> tile_list_with_dram_controllers = getTileListWithMemoryControllers();
    _dram_home_lookup = new AddressHomeLookup(dram_home_lookup_param, tile_list_with_dram_controllers, getCacheLineSize());
    
-   UInt32 SpDir_home_lookup_param = ceilLog2(_cache_line_size);
+   //UInt32 SpDir_home_lookup_param = ceilLog2(_cache_line_size);
+   UInt32 SpDir_home_lookup_param = 10; //1KB interleave
    std::vector<tile_id_t> tile_list;
    for (tile_id_t i = 0; i < (tile_id_t) Config::getSingleton()->getApplicationTiles(); i++)
       tile_list.push_back(i);

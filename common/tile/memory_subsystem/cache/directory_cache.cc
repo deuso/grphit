@@ -100,7 +100,7 @@ DirectoryCache::updateCounters()
 }
 
 DirectoryEntry*
-DirectoryCache::getDirectoryEntry(IntPtr address)
+DirectoryCache::getDirectoryEntryRegion(IntPtr address, bool hit_only)
 {
    if (_enabled)
    {
@@ -112,12 +112,18 @@ DirectoryCache::getDirectoryEntry(IntPtr address)
 
    IntPtr tag;
    UInt32 set_index;
+   bool odd;
    
    // Assume that it always hit in the Dram Directory Cache for now
-   splitAddress(address, tag, set_index);
+   //splitAddress(address, tag, set_index);
+   splitAddressRegion(address, tag, set_index);
+
+   //zl simple hash, region entry is restricted to half of the ways
+   //Lsb of region address indicates it may located at odd ways(1) or even ways(0).
+   odd = tag & 0x1;
    
    // Find the relevant directory entry
-   for (UInt32 i = 0; i < _associativity; i++)
+   for (UInt32 i = odd; i < _associativity; i+=2)
    {
       DirectoryEntry* directory_entry = _directory->getDirectoryEntry(set_index * _associativity + i);
 
@@ -129,15 +135,18 @@ DirectoryCache::getDirectoryEntry(IntPtr address)
          return directory_entry;
       }
    }
+   if(hit_only)
+      return (DirectoryEntry*) NULL;
 
    // Find a free directory entry if one does not currently exist
-   for (UInt32 i = 0; i < _associativity; i++)
+   for (UInt32 i = odd; i < _associativity; i+=2)
    {
       DirectoryEntry* directory_entry = _directory->getDirectoryEntry(set_index * _associativity + i);
       if (directory_entry->getAddress() == INVALID_ADDRESS)
       {
          // Simple check for now. Make sophisticated later
          directory_entry->setAddress(address);
+         directory_entry->getDirectoryBlockInfo()->setRegion(true);
          return directory_entry;
       }
    }
@@ -148,6 +157,72 @@ DirectoryCache::getDirectoryEntry(IntPtr address)
    {
       if ((*it)->getAddress() == address)
       {
+         assert(directory_entry->getDirectoryBlockInfo()->isRegion());
+         return (*it);
+      }
+   }
+
+   return (DirectoryEntry*) NULL;
+}
+
+DirectoryEntry*
+DirectoryCache::getDirectoryEntry(IntPtr address, bool hit_only)
+{
+   if (_enabled)
+   {
+      // Update Performance Model
+      getShmemPerfModel()->incrCurrTime(_directory_access_latency);
+      // Update event & dynamic energy counters
+      updateCounters();
+   }
+
+   IntPtr tag;
+   UInt32 set_index;
+   bool even;
+   
+   // Assume that it always hit in the Dram Directory Cache for now
+   splitAddress(address, tag, set_index);
+
+   //zl simple hash, region entry is restricted to half of the ways
+   //Lsb of region address indicates it may located at odd ways(0) or even ways(1).
+   even = ~((address>>_log_region_size) & 0x1);
+   
+   // Find the relevant directory entry
+   for (UInt32 i = even; i < _associativity; i+=2)
+   {
+      DirectoryEntry* directory_entry = _directory->getDirectoryEntry(set_index * _associativity + i);
+
+      if (directory_entry->getAddress() == address)
+      {
+         if (getShmemPerfModel())
+            getShmemPerfModel()->incrCurrTime(Latency(directory_entry->getLatency(),_frequency));
+         // Simple check for now. Make sophisticated later
+         return directory_entry;
+      }
+   }
+   if(hit_only)
+      return (DirectoryEntry*) NULL;
+
+   // Find a free directory entry if one does not currently exist
+   for (UInt32 i = even; i < _associativity; i+=2)
+   {
+      DirectoryEntry* directory_entry = _directory->getDirectoryEntry(set_index * _associativity + i);
+      if (directory_entry->getAddress() == INVALID_ADDRESS)
+      {
+         // Simple check for now. Make sophisticated later
+         directory_entry->setAddress(address);
+         directory_entry->getDirectoryBlockInfo()->setRegion(false);
+         return directory_entry;
+      }
+   }
+
+   // Check in the _replaced_directory_entry_list
+   vector<DirectoryEntry*>::iterator it;
+   for (it = _replaced_directory_entry_list.begin(); it != _replaced_directory_entry_list.end(); it++)
+   {
+      if ((*it)->getAddress() == address)
+      {
+         assert(!directory_entry->getDirectoryBlockInfo()->isRegion());
          return (*it);
       }
    }
@@ -238,6 +313,15 @@ DirectoryCache::splitAddress(IntPtr address, IntPtr& tag, UInt32& set_index)
 
    tag = cache_line_address;
    set_index = computeSetIndex(address);
+}
+
+void
+DirectoryCache::splitAddressRegion(IntPtr address, IntPtr& tag, UInt32& set_index)
+{
+   IntPtr region_address = address >> _log_region_size;
+
+   tag = region_address;
+   set_index = computeSetIndexRegion(address);
 }
 
 UInt32
@@ -373,7 +457,27 @@ DirectoryCache::computeSetIndex(IntPtr address)
              address, _log_cache_line_size, _log_num_sets, _log_num_directory_slices);
 
    IntPtr set = 0;
-   for (UInt32 i = _log_cache_line_size + _log_num_directory_slices; (i + _log_num_sets) <= (sizeof(IntPtr)*8); i += _log_num_sets)
+   //for (UInt32 i = _log_cache_line_size + _log_num_directory_slices; (i + _log_num_sets) <= (sizeof(IntPtr)*8); i += _log_num_sets)
+   for (UInt32 i = _log_cache_line_size; (i + _log_num_sets) <= (sizeof(IntPtr)*8); i += _log_num_sets)
+   {
+      IntPtr addr_bits = getBits<IntPtr>(address, i + _log_num_sets, i);
+      set = set ^ addr_bits;
+   }
+
+   LOG_PRINT("Set(%#x)", (UInt32) set);
+
+   return (UInt32) set;
+}
+
+IntPtr
+DirectoryCache::computeSetIndexRegion(IntPtr address)
+{
+   LOG_PRINT("Computing Set for address(%#lx), _log_cache_line_size(%u), _log_num_sets(%u), _log_num_directory_slices(%u)",
+             address, _log_cache_line_size, _log_num_sets, _log_num_directory_slices);
+
+   IntPtr set = 0;
+   //for (UInt32 i = _log_cache_line_size + _log_num_directory_slices; (i + _log_num_sets) <= (sizeof(IntPtr)*8); i += _log_num_sets)
+   for (UInt32 i = _log_region_size; (i + _log_num_sets) <= (sizeof(IntPtr)*8); i += _log_num_sets)
    {
       IntPtr addr_bits = getBits<IntPtr>(address, i + _log_num_sets, i);
       set = set ^ addr_bits;

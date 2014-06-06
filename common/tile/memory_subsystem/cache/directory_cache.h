@@ -34,7 +34,8 @@ public:
    ~DirectoryCache();
 
    Directory* getDirectory() { return _directory; }
-   DirectoryEntry* getDirectoryEntry(IntPtr address);
+   DirectoryEntry* getDirectoryEntry(IntPtr address, bool hit_only = false);
+   DirectoryEntry* getDirectoryEntryRegion(IntPtr address, bool hit_only = false);
    DirectoryEntry* replaceDirectoryEntry(IntPtr replaced_address, IntPtr address);
    DirectoryType getDirectoryType() { return _directory_type; }
    void invalidateDirectoryEntry(IntPtr address);
@@ -120,4 +121,7 @@ private:
    module_t _module;
    DVFSManager::AsynchronousMap _asynchronous_map;
    ShmemPerfModel* _shmem_perf_model;
+
+   //zl
+   UInt32 _region_size;
 };

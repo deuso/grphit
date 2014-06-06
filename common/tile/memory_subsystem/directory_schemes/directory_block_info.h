@@ -6,16 +6,16 @@ class DirectoryBlockInfo
 {
 private:
    DirectoryState::Type _dstate;
-   //bool _inst;
+   bool _region;
 
 public:
-   //DirectoryBlockInfo(DirectoryState::Type dstate = DirectoryState::UNCACHED, bool inst=false)
-   DirectoryBlockInfo(DirectoryState::Type dstate = DirectoryState::UNCACHED)
+   DirectoryBlockInfo(DirectoryState::Type dstate = DirectoryState::UNCACHED, bool region=false)
+   //DirectoryBlockInfo(DirectoryState::Type dstate = DirectoryState::UNCACHED)
       : _dstate(dstate) {}
    ~DirectoryBlockInfo() {}
 
    DirectoryState::Type getDState() { return _dstate; }
    void setDState(DirectoryState::Type dstate) { _dstate = dstate; }
-   //bool getInst() { return _inst; }
-   //void setInst(bool inst) { _inst = inst; }
+   bool isRegion() { return _region; }
+   void setRegion(bool region) { _region= region; }
 };

@@ -145,10 +145,16 @@ L2CacheCntlr::getCacheLineInfo(IntPtr address, ShL2CacheLineInfo* L2_cache_line_
       // Read it from the cache
       _L2_cache->getCacheLineInfo(address, L2_cache_line_info);
 
-      DirectoryEntry* directory_entry = _spdir_cache->getDirectoryEntry(address);
+      //DGD: block entry and region entry is not settled in the same half of ways, but they are simple hashed
+      //address[10] == 1 indicates to find region entry in odd ways and block entry in even ways
+      //address[10] == 0 indicates to find region entry in even ways and block entry in odd ways
+      DirectoryEntry* directory_entry_region = _spdir_cache->getDirectoryEntryRegion(address, true);
+      DirectoryEntry* directory_entry_block = _spdir_cache->getDirectoryEntry(address, true);
 
       bool cache_miss = (L2_cache_line_info->getCState() == CacheState::INVALID);
-      bool spdir_miss = (directory_entry == NULL);
+      bool spdir_miss_region = directory_entry_region == NULL;
+      bool spdir_miss_block = directory_entry_block == NULL;
+      bool spdir_miss = spdir_miss_region && spdir_miss_block;
 
       if((shmem_msg_type == ShmemMsg::INV_REP) || (shmem_msg_type == ShmemMsg::FLUSH_REP) || (shmem_msg_type == ShmemMsg::WB_REP))
          assert(!cache_miss && !spdir_miss);
