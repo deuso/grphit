@@ -70,6 +70,8 @@ L2CacheCntlr::L2CacheCntlr(MemoryManager* memory_manager,
          L2_cache_track_miss_types,
          getShmemPerfModel());
 
+   _rtracker = new RTracker(_spdir_cache);
+
 }
 
 L2CacheCntlr::~L2CacheCntlr()
@@ -317,6 +319,7 @@ L2CacheCntlr::handleMsgFromL1Cache(tile_id_t sender, ShmemMsg* shmem_msg)
       getShmemPerfModel()->incrCurrTime(_L2_cache->getSynchronizationDelay(NETWORK_MEMORY));
    }
 
+
    // Incr current time for every message that comes into the L2 cache
    _memory_manager->incrCurrTime(MemComponent::L2_CACHE, CachePerfModel::ACCESS_DATA_AND_TAGS);
 
@@ -458,6 +461,14 @@ void
 L2CacheCntlr::processShmemReq(ShmemReq* shmem_req)
 {
    ShmemMsg::Type msg_type = TYPE(shmem_req);
+
+   //TODO:add TpTracker here
+   //1.not hit, create
+   //2.hit,not owner,set non-tp
+   //3.hit,owner, if(non-tp),cont
+
+   ShmemMsg* shmem_msg = shmem_req->getShmemMsg();
+   _rtracker->accessRTracker(shmem_msg->getRequester(), shmem_msg);
 
    // Process the request
    switch (msg_type)
@@ -856,6 +867,12 @@ L2CacheCntlr::processInvRepFromL1Cache(tile_id_t sender, const ShmemMsg* shmem_m
       {
          directory_entry->getDirectoryBlockInfo()->setDState(DirectoryState::UNCACHED);
       }
+      //TODO:add TpTracker here
+      if (directory_entry->getNumSharers() == 0) {
+         //1.assert hit,non-tp?block++:tp_block++;
+         //2.deallocate
+         _rtracker->accessRTracker(sender, shmem_msg);
+      }
       break;
 
    case DirectoryState::MODIFIED:
@@ -890,6 +907,12 @@ L2CacheCntlr::processFlushRepFromL1Cache(tile_id_t sender, const ShmemMsg* shmem
          if ( (shmem_req == NULL) || (TYPE(shmem_req) == ShmemMsg::SH_REQ) )
          {
             writeCacheLine(address, shmem_msg->getDataBuf());
+         }
+         if(shmem_req==NULL) {
+           //TODO: TpTracker 
+           //1.assert hit,non-tp?block++:tp_block++;
+           //2.deallocate
+            _rtracker->accessRTracker(sender, shmem_msg);
          }
          // Set the line to dirty even if it is logically so
          L2_cache_line_info->setCState(CacheState::DIRTY);

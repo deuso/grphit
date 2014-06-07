@@ -88,9 +88,22 @@ DirectoryCache::~DirectoryCache()
 void
 DirectoryCache::initializeEventCounters()
 {
+   _total_tp_blocks = 0;
+   _total_blocks = 0;
    _total_directory_accesses = 0;
    _total_evictions = 0;
    _total_back_invalidations = 0;
+}
+
+void
+DirectoryCache::inc_blocks()
+{
+   _total_blocks++;
+}
+void
+DirectoryCache::inc_tp_blocks()
+{
+   _total_tp_blocks++;
 }
 
 void
@@ -391,6 +404,8 @@ DirectoryCache::outputSummary(ostream& out)
    out << "    Total Accesses: " << _total_directory_accesses << endl;
    out << "    Total Evictions: " << _total_evictions << endl;
    out << "    Total Back-Invalidations: " << _total_back_invalidations << endl;
+   out << "    Total Temp-private blocks: " << _total_tp_blocks << endl;
+   out << "    Total blocks: " << _total_blocks << endl;
 
    // Output Power and Area Summaries
    if (Config::getSingleton()->getEnablePowerModeling() || Config::getSingleton()->getEnableAreaModeling())

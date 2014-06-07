@@ -22,6 +22,7 @@ using std::map;
 #include "cache_replacement_policy.h"
 #include "cache_hash_fn.h"
 #include "directory_cache.h"
+#include "RTracker.h"
 
 namespace PrL1ShL2SpDirMSI
 {
@@ -70,13 +71,14 @@ namespace PrL1ShL2SpDirMSI
       CacheReplacementPolicy* _L2_cache_replacement_policy_obj;
       CacheHashFn* _L2_cache_hash_fn_obj;
       AddressHomeLookup* _dram_home_lookup;
+      RTracker* _rtracker;
 
       // Is enabled?
       bool _enabled;
 
       // Req list into the L2 cache
       HashMapList<IntPtr,ShmemReq*> _L2_cache_req_queue;
-      HashMapList<IntPtr,ShmemReq*> _sparse_directory_req_queue;
+      //HashMapList<IntPtr,ShmemReq*> _sparse_directory_req_queue;
       // Evicted cache line map
       map<IntPtr,ShL2CacheLineInfo> _evicted_cache_line_map;
 
