@@ -25,7 +25,8 @@ int RTracker::accessRTracker(tile_id_t sender, const ShmemMsg* shmem_msg)
       {
          rt_info= new RT_info(sender,false);
          _rt_map.enqueue(address, rt_info);
-         //LOG_PRINT_WARNING("accessRTracker alloc 0x%x, owner %d", address,sender);
+         //if(address==0x909feec0)
+         //   LOG_PRINT_WARNING("accessRTracker alloc 0x%x, owner %d", address,sender);
       } else {
          assert(count == 1);
          rt_info = _rt_map.front(address);
@@ -45,8 +46,8 @@ int RTracker::accessRTracker(tile_id_t sender, const ShmemMsg* shmem_msg)
    {
       if(sender == shmem_msg->getRequester())//an eviction happens
       {
-         //LOG_PRINT_WARNING("accessRTracker rm 0x%x, tile %d", address,sender);
-         assert(count==1);
+         LOG_ASSERT_ERROR(count==1, "accessRTracker 0x%x, tile %d, count %d", address,sender,count);
+
          rt_info = _rt_map.front(address);
          assert(rt_info);
 
@@ -58,6 +59,9 @@ int RTracker::accessRTracker(tile_id_t sender, const ShmemMsg* shmem_msg)
          {
             //LOG_PRINT_WARNING("accessRTracker eviction tp");
             //assert(rt_info->refl.size() == 0);
+            
+            //if(address==0x909feec0)
+            //   LOG_PRINT_WARNING("accessRTracker rm tp 0x%x, sender %d", address,sender);
             _spdir->inc_tp_blocks();
             _spdir->inc_blocks();
             delete rt_info;
@@ -66,6 +70,9 @@ int RTracker::accessRTracker(tile_id_t sender, const ShmemMsg* shmem_msg)
          }
          if((rt_info->non_tp == true))
          {
+            //if(address==0x909feec0)
+            //   LOG_PRINT_WARNING("accessRTracker rm ts 0x%x, sender %d", address,sender);
+
             //if(rt_info->refl.size() == 0) 
             //{
                //LOG_PRINT_WARNING("accessRTracker eviction ts");

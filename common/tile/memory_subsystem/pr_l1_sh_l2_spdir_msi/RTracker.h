@@ -20,8 +20,9 @@ private:
    typedef struct tracker_info
    {
        tile_id_t owner;
-       bool non_tp;
-       //list<tile_id_t> refl; 
+       //tile_id_t exid; //ex req tile
+       bool non_tp;// false if temporarily private
+       list<tile_id_t> refl; 
        //tracker_info(tile_id_t o,bool n):owner(o),non_tp(n){refl.push_back(o);}
        tracker_info(tile_id_t o,bool n):owner(o),non_tp(n){}
    } RT_info;

@@ -429,9 +429,14 @@ L1CacheCntlr::processInvReqFromL2Cache(tile_id_t sender, ShmemMsg* shmem_msg)
 
       // Invalidate the line in L1-D Cache
       invalidateCacheLine(mem_component, address);
+
+      int req = shmem_msg->getRequester();
+      if(req==getTileId())req=-1;
+      //if(address==0x909feec0)
+      //   LOG_PRINT_WARNING("L1 inv rep address 0x%x sender%d reqstor%d", address, sender, req);
       
       ShmemMsg send_shmem_msg(ShmemMsg::INV_REP, mem_component, MemComponent::L2_CACHE,
-                              shmem_msg->getRequester(), shmem_msg->isReplyExpected(), address,
+                              req, shmem_msg->isReplyExpected(), address,
                               shmem_msg->isModeled());
       _memory_manager->sendMsg(sender, send_shmem_msg);
    }
