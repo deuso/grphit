@@ -83,7 +83,7 @@ namespace PrL1ShL2SpDirMSI
       DirectoryEntry* processDirectoryEntryAllocationReq(IntPtr address);
       // L2 cache operations
       bool getCacheLineInfo(IntPtr address, ShL2CacheLineInfo* L2_cache_line_info,
-                            ShmemMsg::Type shmem_msg_type, bool first_call= false);
+                            ShmemMsg::Type shmem_msg_type, tile_id_t sender, bool first_call= false);
       bool setCacheLineInfo(IntPtr address, ShL2CacheLineInfo* L2_cache_line_info);
       void readCacheLine(IntPtr address, Byte* data_buf);
       void writeCacheLine(IntPtr address, Byte* data_buf);

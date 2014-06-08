@@ -102,7 +102,7 @@ DirectoryCache::updateCounters()
 DirectoryEntry*
 DirectoryCache::getDirectoryEntryRegion(IntPtr address, bool hit_only)
 {
-   if (_enabled)
+   if (_enabled && !hit_only)
    {
       // Update Performance Model
       getShmemPerfModel()->incrCurrTime(_directory_access_latency);

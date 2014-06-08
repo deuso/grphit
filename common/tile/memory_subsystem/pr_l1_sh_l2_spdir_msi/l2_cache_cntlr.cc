@@ -136,7 +136,7 @@ DirectoryEntry* L2CacheCntlr::processDirectoryEntryAllocationReq(IntPtr address)
 }
 
 bool
-L2CacheCntlr::getCacheLineInfo(IntPtr address, ShL2CacheLineInfo* L2_cache_line_info, ShmemMsg::Type shmem_msg_type, bool first_call)
+L2CacheCntlr::getCacheLineInfo(IntPtr address, ShL2CacheLineInfo* L2_cache_line_info, ShmemMsg::Type shmem_msg_type, tile_id_t sender, bool first_call)
 {
    map<IntPtr,ShL2CacheLineInfo>::iterator it = _evicted_cache_line_map.find(address);
    if (it == _evicted_cache_line_map.end())
@@ -151,60 +151,113 @@ L2CacheCntlr::getCacheLineInfo(IntPtr address, ShL2CacheLineInfo* L2_cache_line_
       DirectoryEntry* directory_entry_region = _spdir_cache->getDirectoryEntryRegion(address, true);
       DirectoryEntry* directory_entry_block = _spdir_cache->getDirectoryEntry(address, true);
 
-      bool cache_miss = (L2_cache_line_info->getCState() == CacheState::INVALID);
-      bool spdir_miss_region = directory_entry_region == NULL;
-      bool spdir_miss_block = directory_entry_block == NULL;
-      bool spdir_miss = spdir_miss_region && spdir_miss_block;
+      bool cache_hit = (L2_cache_line_info->getCState() != CacheState::INVALID);
+      bool spdir_region_own = (directory_entry_region->getOwner()==sender);
+      bool spdir_hit_region = (directory_entry_region != NULL);
+      bool spdir_hit_block = directory_entry_block != NULL;
+      bool spdir_hit = spdir_hit_region || spdir_hit_block;
 
       if((shmem_msg_type == ShmemMsg::INV_REP) || (shmem_msg_type == ShmemMsg::FLUSH_REP) || (shmem_msg_type == ShmemMsg::WB_REP))
-         assert(!cache_miss && !spdir_miss);
+         assert(cache_hit && spdir_hit);
          
       if(shmem_msg_type == ShmemMsg::NULLIFY_REQ)//SP_NULLIFY_REQ
-         assert(!cache_miss && !spdir_miss);
+         assert(cache_hit);
       //some asserts to ensure the correctness of coherence protocol
       //assert(!cache_miss || spdir_miss);//sp-hit,cache-miss not allowed
-      assert(first_call || (!first_call && !cache_miss && !spdir_miss));//non first_call should hit both
-      if(!cache_miss && !spdir_miss)//both hit, l2 has ptr to dir-entry
-         if(L2_cache_line_info->getDirectoryEntry() != directory_entry)
-         {
-            assert(L2_cache_line_info->getDirectoryEntry()==NULL);
-            //LOG_ASSERT_WARNING(L2_cache_line_info->getDirectoryEntry()!=NULL, "l2 dir entry null, sp-dir entry 0x%x", directory_entry);
-            //rebuild connection of l2 entry and sp-dir entry
-            L2_cache_line_info->setDirectoryEntry(directory_entry);
-         }
-      if(!cache_miss && spdir_miss)//l2-hit, sp-miss, l2's dir-ptr to null
-         assert(L2_cache_line_info->getDirectoryEntry() == NULL);
-
+      assert(first_call || (!first_call && cache_hit && spdir_hit));//non first_call should hit both
       if (first_call)
       {
          Core::mem_op_t mem_op_type = getMemOpTypeFromShmemMsgType(shmem_msg_type);
-         _L2_cache->updateMissCounters(address, mem_op_type, cache_miss);
+         _L2_cache->updateMissCounters(address, mem_op_type, !cache_hit);
          //_spdir_cache->updateXX();
       }
 
-      if (spdir_miss)
+      //----------------set up dir-ptr in l2 entry------------------
+      if(cache_hit)
       {
-         directory_entry = processDirectoryEntryAllocationReq(address);
-         //directory_entry->getDirectoryBlockInfo()->setInst(requester_mem_component==MemComponent::L1_ICACHE);
-      }
+         //region hit, l2 should point to dir-entry
+         if(spdir_hit_region && !spdir_hit_block) {
+            if(spdir_region_own)
+            {
+               if(L2_cache_line_info->getDirectoryEntry() != directory_entry_region)
+               {
+                  assert(L2_cache_line_info->getDirectoryEntry()==NULL);
+                  //LOG_ASSERT_WARNING(L2_cache_line_info->getDirectoryEntry()!=NULL, "l2 dir entry null, sp-dir entry 0x%x", directory_entry);
+                  //rebuild connection of l2 entry and sp-dir entry
+                  L2_cache_line_info->setDirectoryEntry(directory_entry_region);
+               }
+            }
+            else //non-owner req hit a region and miss a block(cache hit)
+            {
+               //cannot be REP
+               assert((shmem_msg_type == ShmemMsg::EX_REQ) || (shmem_msg_type == ShmemMsg::SH_REQ));
+               //the dir ptr of cacheline may be null if not referenced or point to region entry if privately referenced
+               assert(L2_cache_line_info->getDirectoryEntry()==directory_entry_region || L2_cache_line_info->getDirectoryEntry()==NULL);
+               //allocate block entry
+               directory_entry_block = _spdir_cache->getDirectoryEntry(address);
+               if(!directory_entry_block)
+                  directory_entry_block = processDirectoryEntryAllocationReqBlock(address);
 
-      if (cache_miss)
-      {
-         if ((shmem_msg_type == ShmemMsg::EX_REQ) || (shmem_msg_type == ShmemMsg::SH_REQ))
+               L2_cache_line_info->setDirectoryEntry(directory_entry_block);
+            }
+         }
+         //block hit, l2 has ptr to dir-entry
+         if(spdir_hit_block)
          {
-            // allocate a cache line with garbage data (now the dir-entry exsists)
-            allocateCacheLine(address, L2_cache_line_info, directory_entry);
+            if(L2_cache_line_info->getDirectoryEntry() != directory_entry_block)
+            {
+               assert(L2_cache_line_info->getDirectoryEntry()==NULL);
+               //LOG_ASSERT_WARNING(L2_cache_line_info->getDirectoryEntry()!=NULL, "l2 dir entry null, sp-dir entry 0x%x", directory_entry);
+               //rebuild connection of l2 entry and sp-dir entry
+               L2_cache_line_info->setDirectoryEntry(directory_entry_block);
+            }
+         }
+         if(!spdir_hit)//l2-hit, sp-miss, l2's dir-ptr is null, alloc region entry
+         {
+            assert(L2_cache_line_info->getDirectoryEntry() == NULL);
+            directory_entry_region = _spdir_cache->getDirectoryEntryRegion(address);
+            if(!directory_entry_region)
+               directory_entry_region = processDirectoryEntryAllocationReqRegion(address);
+         }
+      }
+      else//!cache_hit
+      {
+         DirectoryEntry* directory_entry;
+         assert((shmem_msg_type == ShmemMsg::EX_REQ) || (shmem_msg_type == ShmemMsg::SH_REQ));
+         //region hit, l2 should point to dir-entry
+         if(spdir_hit_region && !spdir_hit_block)
+         {
+            if(spdir_region_own)
+            {
+               directory_entry = directory_entry_region;
+            }
+            else //non-owner req hit a region and miss a block(cache miss)
+            {
+               //allocate block entry
+               directory_entry = _spdir_cache->getDirectoryEntry(address);
+               if(!directory_entry)
+                  directory_entry = processDirectoryEntryAllocationReqBlock(address);
+            }
+
+         }
+         else if(!spdir_hit)
+         {
+            //alloc region entry on first access
+            directory_entry= _spdir_cache->getDirectoryEntryRegion(address);
+            if(!directory_entry)
+               directory_entry= processDirectoryEntryAllocationReqRegion(address);
+            // allocate a cache line with garbage data (now the dir-entry exists)
          }
          else
          {
+            //block hit and cache miss not possible
+            assert(!spdir_hit_block);
             LOG_PRINT_ERROR("Unrecognized shmem msg type(%u)", shmem_msg_type);
          }
+
+         allocateCacheLine(address, L2_cache_line_info, directory_entry);
       }
-      else
-      {
-         if(L2_cache_line_info->getDirectoryEntry() == NULL)
-            L2_cache_line_info->setDirectoryEntry(directory_entry);
-      }
+
       return true;
    }
    else // (present in the evicted map [_evicted_cache_line_map])
@@ -348,7 +401,7 @@ L2CacheCntlr::handleMsgFromL1Cache(tile_id_t sender, ShmemMsg* shmem_msg)
       // Get the ShL2CacheLineInfo object
       ShL2CacheLineInfo L2_cache_line_info;
       //TODO:need to allocate dir-entry if icache-rep?
-      getCacheLineInfo(address, &L2_cache_line_info, shmem_msg_type);
+      getCacheLineInfo(address, &L2_cache_line_info, shmem_msg_type, sender);
       assert(L2_cache_line_info.isValid());
 
       if (L2_cache_line_info.getCachingComponent() != shmem_msg->getSenderMemComponent())
@@ -489,7 +542,7 @@ L2CacheCntlr::processNullifyReq(ShmemReq* nullify_req, Byte* data_buf)
 
    // get cache line info 
    ShL2CacheLineInfo L2_cache_line_info;
-   bool sp_nullify = getCacheLineInfo(address, &L2_cache_line_info, ShmemMsg::NULLIFY_REQ);
+   bool sp_nullify = getCacheLineInfo(address, &L2_cache_line_info, ShmemMsg::NULLIFY_REQ, -1);
 
    assert(L2_cache_line_info.getCState() != CacheState::INVALID);
 
@@ -592,7 +645,7 @@ L2CacheCntlr::processExReqFromL1Cache(ShmemReq* shmem_req, Byte* data_buf, bool 
    bool msg_modeled = shmem_req->getShmemMsg()->isModeled();
 
    ShL2CacheLineInfo L2_cache_line_info;
-   getCacheLineInfo(address, &L2_cache_line_info, ShmemMsg::EX_REQ, first_call);
+   getCacheLineInfo(address, &L2_cache_line_info, ShmemMsg::EX_REQ, requester, first_call);
  
    assert(L2_cache_line_info.getCState() != CacheState::INVALID);
 
@@ -715,7 +768,7 @@ L2CacheCntlr::processShReqFromL1Cache(ShmemReq* shmem_req, Byte* data_buf, bool 
    bool msg_modeled = shmem_req->getShmemMsg()->isModeled();
 
    ShL2CacheLineInfo L2_cache_line_info;
-   getCacheLineInfo(address, &L2_cache_line_info, ShmemMsg::SH_REQ, first_call);
+   getCacheLineInfo(address, &L2_cache_line_info, ShmemMsg::SH_REQ, requester, first_call);
  
    assert(L2_cache_line_info.getCState() != CacheState::INVALID);
 
