@@ -908,12 +908,7 @@ L2CacheCntlr::processFlushRepFromL1Cache(tile_id_t sender, const ShmemMsg* shmem
          {
             writeCacheLine(address, shmem_msg->getDataBuf());
          }
-         if(shmem_req==NULL) {
-           //TODO: TpTracker 
-           //1.assert hit,non-tp?block++:tp_block++;
-           //2.deallocate
-            _rtracker->accessRTracker(sender, shmem_msg);
-         }
+
          // Set the line to dirty even if it is logically so
          L2_cache_line_info->setCState(CacheState::DIRTY);
 
@@ -921,6 +916,12 @@ L2CacheCntlr::processFlushRepFromL1Cache(tile_id_t sender, const ShmemMsg* shmem
          directory_entry->removeSharer(sender, false);
          directory_entry->setOwner(INVALID_TILE_ID);
          directory_entry->getDirectoryBlockInfo()->setDState(DirectoryState::UNCACHED);
+         if(shmem_req==NULL) {
+           //TODO: TpTracker
+           //1.assert hit,non-tp?block++:tp_block++;
+           //2.deallocate
+            _rtracker->accessRTracker(sender, shmem_msg);
+         }
       }
       break;
 

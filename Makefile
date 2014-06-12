@@ -36,4 +36,10 @@ clean_output_dirs:
 	rm -f $(SIM_ROOT)/results/latest
 	rm -rf $(SIM_ROOT)/results/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]_[0-9][0-9]-[0-9][0-9]-[0-9][0-9]
 
+gitclean:
+	$(MAKE) -C common clean
+	$(MAKE) -C tests/unit clean
+	$(MAKE) -C tests/apps clean
+	$(MAKE) -C tests/benchmarks clean
+
 regress_quick: regress_unit regress_apps

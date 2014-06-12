@@ -43,10 +43,6 @@ public:
    void outputSummary(ostream& os);
    static void dummyOutputSummary(ostream& os, tile_id_t tile_id);
 
-   //===========zl=========
-   void inc_tp_blocks();
-   void inc_blocks();
-
    void enable() { _enabled = true; }
    void disable() { _enabled = false; }
 
@@ -96,8 +92,6 @@ private:
    UInt64 _total_evictions;
    UInt64 _total_back_invalidations;
 
-   UInt64 _total_tp_blocks;
-   UInt64 _total_blocks;
 
    bool _enabled;
 

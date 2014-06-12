@@ -52,6 +52,7 @@ namespace PrL1ShL2SpDirMSI
 
       Cache* getL2Cache() { return _L2_cache; }
       DirectoryCache* getDirectoryCache() { return _spdir_cache; }
+      RTracker* getRTracker() { return _rtracker; }
 
       // Handle message from L1 Cache
       void handleMsgFromL1Cache(tile_id_t sender, ShmemMsg* shmem_msg);

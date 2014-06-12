@@ -443,6 +443,8 @@ MemoryManager::outputSummary(std::ostream &os, const Time& target_completion_tim
    _L2_cache_cntlr->getL2Cache()->outputSummary(os, target_completion_time);
    os << "Sparse Directory Cache Summary:\n";
    _L2_cache_cntlr->getDirectoryCache()->outputSummary(os);
+   os << "RTracker Summary:\n";
+   _L2_cache_cntlr->getDirectoryCache()->outputSummary(os);
 
    if (_dram_cntlr_present)
    {
