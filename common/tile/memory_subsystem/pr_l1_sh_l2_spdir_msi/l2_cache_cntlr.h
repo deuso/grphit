@@ -31,6 +31,7 @@ namespace PrL1ShL2SpDirMSI
       L2CacheCntlr(MemoryManager* memory_manager,
                    AddressHomeLookup* dram_home_lookup,
                    UInt32 cache_line_size,
+                   UInt32 region_size,
                    UInt32 L2_cache_size,
                    UInt32 L2_cache_associativity,
                    UInt32 L2_cache_num_banks,
@@ -80,7 +81,8 @@ namespace PrL1ShL2SpDirMSI
       // Evicted cache line map
       map<IntPtr,ShL2CacheLineInfo> _evicted_cache_line_map;
 
-      DirectoryEntry* processDirectoryEntryAllocationReq(IntPtr address);
+      DirectoryEntry* processDirectoryEntryAllocationReq(IntPtr address, bool region, tile_id_t pre_owner);
+
       // L2 cache operations
       bool getCacheLineInfo(IntPtr address, ShL2CacheLineInfo* L2_cache_line_info,
                             ShmemMsg::Type shmem_msg_type, tile_id_t sender, bool first_call= false);
@@ -126,6 +128,7 @@ namespace PrL1ShL2SpDirMSI
 
       // Dram Home Lookup
       tile_id_t getDramHome(IntPtr address) { return _dram_home_lookup->getHome(address); }
+      IntPtr calcPresentBit(IntPtr address) { return _spdir_cache->calcPresentBit(address); }
    };
 
 }

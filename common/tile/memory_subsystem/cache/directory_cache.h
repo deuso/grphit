@@ -26,6 +26,7 @@ public:
                   string total_entries_str,
                   UInt32 associativity,
                   UInt32 cache_line_size,
+                  UInt32 region_size,
                   UInt32 max_hw_sharers,
                   UInt32 max_num_sharers,
                   UInt32 num_directory_slices,
@@ -34,12 +35,11 @@ public:
    ~DirectoryCache();
 
    Directory* getDirectory() { return _directory; }
-   DirectoryEntry* getDirectoryEntry(IntPtr address, bool hit_only = false);
-   DirectoryEntry* getDirectoryEntryRegion(IntPtr address, bool hit_only = false);
-   DirectoryEntry* replaceDirectoryEntry(IntPtr replaced_address, IntPtr address);
+   DirectoryEntry* getDirectoryEntry(IntPtr address, bool region, bool hit_only = false);
+   DirectoryEntry* replaceDirectoryEntry(IntPtr replaced_address, IntPtr address, bool replaced_region);
    DirectoryType getDirectoryType() { return _directory_type; }
    void invalidateDirectoryEntry(IntPtr address);
-   void getReplacementCandidates(IntPtr address, vector<DirectoryEntry*>& replacement_candidate_list);
+   void getReplacementCandidates(IntPtr address, vector<DirectoryEntry*>& replacement_candidate_list, bool region);
 
    void outputSummary(ostream& os);
    static void dummyOutputSummary(ostream& os, tile_id_t tile_id);
@@ -50,6 +50,7 @@ public:
    int getDVFS(double &frequency, double &voltage);
    int setDVFS(double frequency, voltage_option_t voltage_flag, const Time& curr_time);
    Time getSynchronizationDelay(module_t module);
+   IntPtr calcPresentBit(IntPtr address) { return (address>>_log_cache_line_size)&(1<<_log_region_size-1);}
 
 private:
    Tile* _tile;
@@ -73,10 +74,12 @@ private:
 
    UInt32 _num_sets;
    UInt32 _cache_line_size;
+   UInt32 _region_size;
    UInt32 _num_directory_slices;
 
    UInt32 _log_num_sets;
    UInt32 _log_cache_line_size;
+   UInt32 _log_region_size;
    UInt32 _log_num_application_tiles;
    UInt32 _log_num_directory_slices;
 
@@ -106,9 +109,11 @@ private:
 
    void initializeEventCounters();
    void splitAddress(IntPtr address, IntPtr& tag, UInt32& set_index);
+   void splitAddressRegion(IntPtr address, IntPtr& tag, UInt32& set_index);
 
    void updateCounters();
    IntPtr computeSetIndex(IntPtr address);
+   IntPtr computeSetIndexRegion(IntPtr address);
   
    // Output auto-generated directory size and access time
    void printAutogenDirectorySizeAndAccessCycles(ostream& out);
@@ -122,6 +127,4 @@ private:
    DVFSManager::AsynchronousMap _asynchronous_map;
    ShmemPerfModel* _shmem_perf_model;
 
-   //zl
-   UInt32 _region_size;
 };

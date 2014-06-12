@@ -13,6 +13,7 @@ DirectoryCache::DirectoryCache(Tile* tile,
                                string total_entries_str,
                                UInt32 associativity,
                                UInt32 cache_line_size,
+                               UInt32 region_size,
                                UInt32 max_hw_sharers,
                                UInt32 max_num_sharers,
                                UInt32 num_directory_slices,
@@ -25,6 +26,7 @@ DirectoryCache::DirectoryCache(Tile* tile,
    , _total_entries_str(total_entries_str)
    , _associativity(associativity)
    , _cache_line_size(cache_line_size)
+   , _region_size(region_size)
    , _num_directory_slices(num_directory_slices)
    , _directory_access_cycles_str(directory_access_cycles_str)
    , _mcpat_cache_interface(NULL)
@@ -73,6 +75,7 @@ DirectoryCache::DirectoryCache(Tile* tile,
 
    _log_num_sets = floorLog2(_num_sets);
    _log_cache_line_size = floorLog2(_cache_line_size);
+   _log_region_size = floorLog2(_region_size);
    _log_num_directory_slices = ceilLog2(_num_directory_slices); 
    
    initializeEventCounters();
@@ -99,8 +102,9 @@ DirectoryCache::updateCounters()
    _total_directory_accesses ++;
 }
 
+
 DirectoryEntry*
-DirectoryCache::getDirectoryEntryRegion(IntPtr address, bool hit_only)
+DirectoryCache::getDirectoryEntry(IntPtr address, bool region, bool hit_only)
 {
    if (_enabled && !hit_only)
    {
@@ -112,83 +116,22 @@ DirectoryCache::getDirectoryEntryRegion(IntPtr address, bool hit_only)
 
    IntPtr tag;
    UInt32 set_index;
-   bool odd;
+   bool start;
    
-   // Assume that it always hit in the Dram Directory Cache for now
-   //splitAddress(address, tag, set_index);
-   splitAddressRegion(address, tag, set_index);
-
-   //zl simple hash, region entry is restricted to half of the ways
-   //Lsb of region address indicates it may located at odd ways(1) or even ways(0).
-   odd = tag & 0x1;
-   
-   // Find the relevant directory entry
-   for (UInt32 i = odd; i < _associativity; i+=2)
-   {
-      DirectoryEntry* directory_entry = _directory->getDirectoryEntry(set_index * _associativity + i);
-
-      if (directory_entry->getAddress() == address)
-      {
-         if (getShmemPerfModel())
-            getShmemPerfModel()->incrCurrTime(Latency(directory_entry->getLatency(),_frequency));
-         // Simple check for now. Make sophisticated later
-         return directory_entry;
-      }
-   }
-   if(hit_only)
-      return (DirectoryEntry*) NULL;
-
-   // Find a free directory entry if one does not currently exist
-   for (UInt32 i = odd; i < _associativity; i+=2)
-   {
-      DirectoryEntry* directory_entry = _directory->getDirectoryEntry(set_index * _associativity + i);
-      if (directory_entry->getAddress() == INVALID_ADDRESS)
-      {
-         // Simple check for now. Make sophisticated later
-         directory_entry->setAddress(address);
-         directory_entry->getDirectoryBlockInfo()->setRegion(true);
-         return directory_entry;
-      }
-   }
-
-   // Check in the _replaced_directory_entry_list
-   vector<DirectoryEntry*>::iterator it;
-   for (it = _replaced_directory_entry_list.begin(); it != _replaced_directory_entry_list.end(); it++)
-   {
-      if ((*it)->getAddress() == address)
-      {
-         assert(directory_entry->getDirectoryBlockInfo()->isRegion());
-         return (*it);
-      }
-   }
-
-   return (DirectoryEntry*) NULL;
-}
-
-DirectoryEntry*
-DirectoryCache::getDirectoryEntry(IntPtr address, bool hit_only)
-{
-   if (_enabled)
-   {
-      // Update Performance Model
-      getShmemPerfModel()->incrCurrTime(_directory_access_latency);
-      // Update event & dynamic energy counters
-      updateCounters();
-   }
-
-   IntPtr tag;
-   UInt32 set_index;
-   bool even;
-   
-   // Assume that it always hit in the Dram Directory Cache for now
-   splitAddress(address, tag, set_index);
-
    //zl simple hash, region entry is restricted to half of the ways
    //Lsb of region address indicates it may located at odd ways(0) or even ways(1).
-   even = ~((address>>_log_region_size) & 0x1);
+   if(region) {
+      splitAddressRegion(address, tag, set_index);
+      start = tag & 0x1;
+      address = tag;
+   }
+   else {
+      splitAddress(address, tag, set_index);
+      start = ~((address>>_log_region_size) & 0x1);
+   }
    
    // Find the relevant directory entry
-   for (UInt32 i = even; i < _associativity; i+=2)
+   for (UInt32 i = start; i < _associativity; i+=2)
    {
       DirectoryEntry* directory_entry = _directory->getDirectoryEntry(set_index * _associativity + i);
 
@@ -204,7 +147,7 @@ DirectoryCache::getDirectoryEntry(IntPtr address, bool hit_only)
       return (DirectoryEntry*) NULL;
 
    // Find a free directory entry if one does not currently exist
-   for (UInt32 i = even; i < _associativity; i+=2)
+   for (UInt32 i = start; i < _associativity; i+=2)
    {
       DirectoryEntry* directory_entry = _directory->getDirectoryEntry(set_index * _associativity + i);
       if (directory_entry->getAddress() == INVALID_ADDRESS)
@@ -222,7 +165,7 @@ DirectoryCache::getDirectoryEntry(IntPtr address, bool hit_only)
    {
       if ((*it)->getAddress() == address)
       {
-         assert(!directory_entry->getDirectoryBlockInfo()->isRegion());
+         assert(!(*it)->getDirectoryBlockInfo()->isRegion());
          return (*it);
       }
    }
@@ -231,35 +174,50 @@ DirectoryCache::getDirectoryEntry(IntPtr address, bool hit_only)
 }
 
 void
-DirectoryCache::getReplacementCandidates(IntPtr address, vector<DirectoryEntry*>& replacement_candidate_list)
+DirectoryCache::getReplacementCandidates(IntPtr address, vector<DirectoryEntry*>& replacement_candidate_list, bool region)
 {
-   assert(getDirectoryEntry(address) == NULL);
+   assert(getDirectoryEntry(address, region) == NULL);
    
    IntPtr tag;
    UInt32 set_index;
-   splitAddress(address, tag, set_index);
+   bool start;
+   
+   //zl simple hash, region entry is restricted to half of the ways
+   //Lsb of region address indicates it may located at odd ways(0) or even ways(1).
+   if(region) {
+      splitAddressRegion(address, tag, set_index);
+      start = tag & 0x1;
+      address = tag;
+   }
+   else {
+      splitAddress(address, tag, set_index);
+      start = ~((address>>_log_region_size) & 0x1);
+   }
 
-   for (UInt32 i = 0; i < _associativity; i++)
+   for (UInt32 i = start; i < _associativity; i+=2)
    {
       replacement_candidate_list.push_back(_directory->getDirectoryEntry(set_index * _associativity + i));
    }
 }
 
 DirectoryEntry*
-DirectoryCache::replaceDirectoryEntry(IntPtr replaced_address, IntPtr address)
+DirectoryCache::replaceDirectoryEntry(IntPtr replaced_address, IntPtr address, bool replaced_region)
 {
    IntPtr tag;
    UInt32 set_index;
+   
    splitAddress(replaced_address, tag, set_index);
 
    DirectoryEntry* replaced_directory_entry = NULL;
    DirectoryEntry* new_directory_entry = DirectoryEntry::create(_caching_protocol_type, _directory_type, _max_hw_sharers, _max_num_sharers);
    new_directory_entry->setAddress(address);
 
+
    for (UInt32 i = 0; i < _associativity; i++)
    {
       DirectoryEntry* directory_entry = _directory->getDirectoryEntry(set_index * _associativity + i);
-      if (directory_entry->getAddress() == replaced_address)
+      if (directory_entry->getAddress() == replaced_address && 
+         directory_entry->getDirectoryBlockInfo()->isRegion()==replaced_region)
       {
          replaced_directory_entry = directory_entry;
          _directory->setDirectoryEntry(set_index * _associativity + i, new_directory_entry);

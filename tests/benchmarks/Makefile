@@ -6,7 +6,7 @@ TEST_DIST_BENCH_LIST = barnes_bench_test_dist ocean_contiguous_bench_test_dist o
 
 # Radiosity is not added to the TEST_DIST_BENCH_LIST since it takes 3 days to complete
 
-regress_bench: $(TEST_BENCH_LIST) $(TEST_DIST_BENCH_LIST)
+regress_bench: $(TEST_BENCH_LIST)
 
 ifeq ($(MAKECMDGOALS),clean)
 clean:

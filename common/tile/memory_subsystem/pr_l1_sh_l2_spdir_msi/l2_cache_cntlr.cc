@@ -1,3 +1,24 @@
+// The MIT License (MIT)
+
+// Copyright (c) 2014 Lu Zeng
+
+// Permission is hereby granted, free of charge, to any person obtaining a copy of
+// this software and associated documentation files (the "Software"), to deal in
+// the Software without restriction, including without limitation the rights to
+// use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+// the Software, and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+// FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+// COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+// IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+// CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 #include "l2_cache_cntlr.h"
 #include "memory_manager.h"
 #include "directory_type.h"
@@ -16,6 +37,7 @@ namespace PrL1ShL2SpDirMSI
 L2CacheCntlr::L2CacheCntlr(MemoryManager* memory_manager,
                            AddressHomeLookup* dram_home_lookup,
                            UInt32 cache_line_size,
+                           UInt32 region_size,
                            UInt32 L2_cache_size,
                            UInt32 L2_cache_associativity,
                            UInt32 L2_cache_num_banks,
@@ -42,6 +64,7 @@ L2CacheCntlr::L2CacheCntlr(MemoryManager* memory_manager,
          sparse_directory_total_entries_str,
          sparse_directory_associativity,
          cache_line_size,
+         region_size,
          sparse_directory_max_hw_sharers,
          sparse_directory_max_num_sharers,
          num_dir_cntlrs,
@@ -84,14 +107,14 @@ L2CacheCntlr::~L2CacheCntlr()
    delete _spdir_cache;
 }
 
-DirectoryEntry* L2CacheCntlr::processDirectoryEntryAllocationReq(IntPtr address)
+DirectoryEntry* L2CacheCntlr::processDirectoryEntryAllocationReq(IntPtr address, bool region, tile_id_t owner)
 {
    //IntPtr address = shmem_req->getShmemMsg()->getAddress();
    //tile_id_t requester = shmem_req->getShmemMsg()->getRequester();
    Time msg_time = getShmemPerfModel()->getCurrTime();
 
    std::vector<DirectoryEntry*> replacement_candidate_list;
-   _spdir_cache->getReplacementCandidates(address, replacement_candidate_list);
+   _spdir_cache->getReplacementCandidates(address, replacement_candidate_list, false);
 
    std::vector<DirectoryEntry*>::iterator it;
    std::vector<DirectoryEntry*>::iterator replacement_candidate = replacement_candidate_list.end();
@@ -112,9 +135,13 @@ DirectoryEntry* L2CacheCntlr::processDirectoryEntryAllocationReq(IntPtr address)
             "Cant find a directory entry to be replaced with a non-zero request list");
 
    IntPtr replaced_address = (*replacement_candidate)->getAddress();
-
+   bool replaced_region = (*replacement_candidate)->getDirectoryBlockInfo()->isRegion();
    // We get the entry with the lowest number of sharers
-   DirectoryEntry* directory_entry = _spdir_cache->replaceDirectoryEntry(replaced_address, address);
+   DirectoryEntry* directory_entry = _spdir_cache->replaceDirectoryEntry(replaced_address, address, replaced_region);
+   directory_entry->getDirectoryBlockInfo()->setRegion(region);
+
+   if(region) directory_entry->setOwner(owner);//sharer represents present bit
+   else directory_entry->addSharer(owner);//new block entry with region owner asserted, owner param is INVALID_TILE_ID
 
    // The NULLIFY requests are always modeled in the network
    bool msg_modeled = true;
@@ -148,8 +175,8 @@ L2CacheCntlr::getCacheLineInfo(IntPtr address, ShL2CacheLineInfo* L2_cache_line_
       //DGD: block entry and region entry is not settled in the same half of ways, but they are simple hashed
       //address[10] == 1 indicates to find region entry in odd ways and block entry in even ways
       //address[10] == 0 indicates to find region entry in even ways and block entry in odd ways
-      DirectoryEntry* directory_entry_region = _spdir_cache->getDirectoryEntryRegion(address, true);
-      DirectoryEntry* directory_entry_block = _spdir_cache->getDirectoryEntry(address, true);
+      DirectoryEntry* directory_entry_region = _spdir_cache->getDirectoryEntry(address, true, true);
+      DirectoryEntry* directory_entry_block = _spdir_cache->getDirectoryEntry(address, false, true);
 
       bool cache_hit = (L2_cache_line_info->getCState() != CacheState::INVALID);
       bool spdir_region_own = (directory_entry_region->getOwner()==sender);
@@ -193,10 +220,18 @@ L2CacheCntlr::getCacheLineInfo(IntPtr address, ShL2CacheLineInfo* L2_cache_line_
                assert((shmem_msg_type == ShmemMsg::EX_REQ) || (shmem_msg_type == ShmemMsg::SH_REQ));
                //the dir ptr of cacheline may be null if not referenced or point to region entry if privately referenced
                assert(L2_cache_line_info->getDirectoryEntry()==directory_entry_region || L2_cache_line_info->getDirectoryEntry()==NULL);
-               //allocate block entry
-               directory_entry_block = _spdir_cache->getDirectoryEntry(address);
+               
+               //deassert present bit in region entry(may not asserted)
+               tile_id_t region_owner = directory_entry_region->getOwner();
+               tile_id_t req_present_bit = calcPresentBit(address);
+               if(directory_entry_region->hasSharer(req_present_bit))
+                  directory_entry_region->removeSharer(req_present_bit, false);
+               
+               //allocate a block entry contains owner of the region
+               directory_entry_block = _spdir_cache->getDirectoryEntry(address, false, false);
                if(!directory_entry_block)
-                  directory_entry_block = processDirectoryEntryAllocationReqBlock(address);
+                  directory_entry_block = processDirectoryEntryAllocationReq(address, false, region_owner);
+               directory_entry_block->getDirectoryBlockInfo()->setDState(directory_entry_region->getDirectoryBlockInfo()->getDState());
 
                L2_cache_line_info->setDirectoryEntry(directory_entry_block);
             }
@@ -215,9 +250,10 @@ L2CacheCntlr::getCacheLineInfo(IntPtr address, ShL2CacheLineInfo* L2_cache_line_
          if(!spdir_hit)//l2-hit, sp-miss, l2's dir-ptr is null, alloc region entry
          {
             assert(L2_cache_line_info->getDirectoryEntry() == NULL);
-            directory_entry_region = _spdir_cache->getDirectoryEntryRegion(address);
+            directory_entry_region = _spdir_cache->getDirectoryEntry(address, true, false);
             if(!directory_entry_region)
-               directory_entry_region = processDirectoryEntryAllocationReqRegion(address);
+               directory_entry_region = processDirectoryEntryAllocationReq(address, true, sender);
+            L2_cache_line_info->setDirectoryEntry(directory_entry_region);
          }
       }
       else//!cache_hit
@@ -233,19 +269,24 @@ L2CacheCntlr::getCacheLineInfo(IntPtr address, ShL2CacheLineInfo* L2_cache_line_
             }
             else //non-owner req hit a region and miss a block(cache miss)
             {
-               //allocate block entry
-               directory_entry = _spdir_cache->getDirectoryEntry(address);
+            	//deassert present bit in region entry(may not asserted)
+					tile_id_t region_owner = directory_entry_region->getOwner();
+					tile_id_t req_present_bit = calcPresentBit(address);
+					if(directory_entry_region->hasSharer(req_present_bit))
+						directory_entry_region->removeSharer(req_present_bit, false);
+            	//allocate a block entry contains owner of the region
+               directory_entry = _spdir_cache->getDirectoryEntry(address, false, false);
                if(!directory_entry)
-                  directory_entry = processDirectoryEntryAllocationReqBlock(address);
+                  directory_entry = processDirectoryEntryAllocationReq(address, false, region_owner);
+               directory_entry->getDirectoryBlockInfo()->setDState(directory_entry_region->getDirectoryBlockInfo()->getDState());
             }
-
          }
          else if(!spdir_hit)
          {
             //alloc region entry on first access
-            directory_entry= _spdir_cache->getDirectoryEntryRegion(address);
+            directory_entry= _spdir_cache->getDirectoryEntry(address, true, false);
             if(!directory_entry)
-               directory_entry= processDirectoryEntryAllocationReqRegion(address);
+               directory_entry= processDirectoryEntryAllocationReq(address, true, sender);
             // allocate a cache line with garbage data (now the dir-entry exists)
          }
          else
@@ -659,86 +700,101 @@ L2CacheCntlr::processExReqFromL1Cache(ShmemReq* shmem_req, Byte* data_buf, bool 
       DirectoryEntry* directory_entry = L2_cache_line_info.getDirectoryEntry();
       assert(directory_entry != NULL);
       DirectoryState::Type curr_dstate = directory_entry->getDirectoryBlockInfo()->getDState();
+      bool region = directory_entry->getDirectoryBlockInfo()->isRegion();
 
-      switch (curr_dstate)
-      {
-      case DirectoryState::MODIFIED:
-         {
-            // Flush the owner
-            LOG_ASSERT_ERROR(directory_entry->getOwner() != INVALID_TILE_ID,
-                             "Address(%#lx), State(MODIFIED), owner(INVALID)", address);
-            LOG_ASSERT_ERROR(L2_cache_line_info.getCachingComponent() == MemComponent::L1_DCACHE,
-                             "Caching component(%u)", L2_cache_line_info.getCachingComponent());
+      //hit a region
+		if(region)
+		{
+			assert(directory_entry->getOwner()==requester);
+			//add present bit and send EX_REP
+			tile_id_t req_present_bit = calcPresentBit(address);
+			assert(directory_entry->addSharer(req_present_bit));
+			readCacheLineAndSendToL1Cache(ShmemMsg::EX_REP, address, MemComponent::L1_DCACHE, data_buf, requester, msg_modeled);
+			completed = true;
+		}
+		else
+		{
+			switch (curr_dstate)
+			{
+			case DirectoryState::MODIFIED:
+				{
 
-            ShmemMsg shmem_msg(ShmemMsg::FLUSH_REQ, MemComponent::L2_CACHE, MemComponent::L1_DCACHE,
-                               requester, false, address,
-                               msg_modeled);
-            _memory_manager->sendMsg(directory_entry->getOwner(), shmem_msg);
-         }
-         break;
+					// Flush the owner
+					LOG_ASSERT_ERROR(directory_entry->getOwner() != INVALID_TILE_ID,
+										  "Address(%#lx), State(MODIFIED), owner(INVALID)", address);
+					LOG_ASSERT_ERROR(L2_cache_line_info.getCachingComponent() == MemComponent::L1_DCACHE,
+										  "Caching component(%u)", L2_cache_line_info.getCachingComponent());
 
-      case DirectoryState::SHARED:
-         {
-            LOG_ASSERT_ERROR(directory_entry->getOwner() == INVALID_TILE_ID,
-                             "Address(%#lx), State(SHARED), owner(%i)", address, directory_entry->getOwner());
-            LOG_ASSERT_ERROR(directory_entry->getNumSharers() > 0, 
-                             "Address(%#lx), Directory State(SHARED), Num Sharers(%u)",
-                             address, directory_entry->getNumSharers());
-            LOG_ASSERT_ERROR(L2_cache_line_info.getCachingComponent() == MemComponent::L1_DCACHE,
-                             "Caching component(%u)", L2_cache_line_info.getCachingComponent());
-      
-            if ((directory_entry->hasSharer(requester)) && (directory_entry->getNumSharers() == 1))
-            {
-               // Upgrade miss - shortcut - set state to MODIFIED
-               directory_entry->setOwner(requester);
-               directory_entry->getDirectoryBlockInfo()->setDState(DirectoryState::MODIFIED);
+					ShmemMsg shmem_msg(ShmemMsg::FLUSH_REQ, MemComponent::L2_CACHE, MemComponent::L1_DCACHE,
+											 requester, false, address,
+											 msg_modeled);
+					_memory_manager->sendMsg(directory_entry->getOwner(), shmem_msg);
+				}
+				break;
 
-               ShmemMsg shmem_msg(ShmemMsg::UPGRADE_REP, MemComponent::L2_CACHE, MemComponent::L1_DCACHE,
-                                  requester, false, address,
-                                  msg_modeled);
-               _memory_manager->sendMsg(requester, shmem_msg);
-               
-               // Set completed to true
-               completed = true;
-            }
-            else
-            {
-               // Invalidate all the sharers
-               vector<tile_id_t> sharers_list;
-               bool all_tiles_sharers = directory_entry->getSharersList(sharers_list);
-              
-               sendInvalidationMsg(ShmemMsg::EX_REQ,
-                                   address, MemComponent::L1_DCACHE,
-                                   all_tiles_sharers, sharers_list,
-                                   requester, msg_modeled);
-            }
-         }
-         break;
+			case DirectoryState::SHARED:
+				{
+					LOG_ASSERT_ERROR(directory_entry->getOwner() == INVALID_TILE_ID,
+										  "Address(%#lx), State(SHARED), owner(%i)", address, directory_entry->getOwner());
+					LOG_ASSERT_ERROR(directory_entry->getNumSharers() > 0,
+										  "Address(%#lx), Directory State(SHARED), Num Sharers(%u)",
+										  address, directory_entry->getNumSharers());
+					LOG_ASSERT_ERROR(L2_cache_line_info.getCachingComponent() == MemComponent::L1_DCACHE,
+										  "Caching component(%u)", L2_cache_line_info.getCachingComponent());
 
-      case DirectoryState::UNCACHED:
-         {
-            assert(directory_entry->getNumSharers() == 0);
-          
-            // Set caching component 
-            L2_cache_line_info.setCachingComponent(MemComponent::L1_DCACHE);
+					if ((directory_entry->hasSharer(requester)) && (directory_entry->getNumSharers() == 1))
+					{
+						// Upgrade miss - shortcut - set state to MODIFIED
+						directory_entry->setOwner(requester);
+						directory_entry->getDirectoryBlockInfo()->setDState(DirectoryState::MODIFIED);
 
-            // Add the sharer and set that as the owner 
-            __attribute__((unused)) bool add_result = directory_entry->addSharer(requester);
-            assert(add_result);
-            directory_entry->setOwner(requester);
-            directory_entry->getDirectoryBlockInfo()->setDState(DirectoryState::MODIFIED);
+						ShmemMsg shmem_msg(ShmemMsg::UPGRADE_REP, MemComponent::L2_CACHE, MemComponent::L1_DCACHE,
+												 requester, false, address,
+												 msg_modeled);
+						_memory_manager->sendMsg(requester, shmem_msg);
 
-            readCacheLineAndSendToL1Cache(ShmemMsg::EX_REP, address, MemComponent::L1_DCACHE, data_buf, requester, msg_modeled);
+						// Set completed to true
+						completed = true;
+					}
+					else
+					{
+						// Invalidate all the sharers
+						vector<tile_id_t> sharers_list;
+						bool all_tiles_sharers = directory_entry->getSharersList(sharers_list);
 
-            // Set completed to true
-            completed = true;
-         }
-         break;
+						sendInvalidationMsg(ShmemMsg::EX_REQ,
+												  address, MemComponent::L1_DCACHE,
+												  all_tiles_sharers, sharers_list,
+												  requester, msg_modeled);
+					}
+				}
+				break;
 
-      default:
-         LOG_PRINT_ERROR("Unrecognized DirectoryState(%u)", curr_dstate);
-         break;
-      }
+			case DirectoryState::UNCACHED:
+				{
+					assert(directory_entry->getNumSharers() == 0);
+
+					// Set caching component
+					L2_cache_line_info.setCachingComponent(MemComponent::L1_DCACHE);
+
+					// Add the sharer and set that as the owner
+					__attribute__((unused)) bool add_result = directory_entry->addSharer(requester);
+					assert(add_result);
+					directory_entry->setOwner(requester);
+					directory_entry->getDirectoryBlockInfo()->setDState(DirectoryState::MODIFIED);
+
+					readCacheLineAndSendToL1Cache(ShmemMsg::EX_REP, address, MemComponent::L1_DCACHE, data_buf, requester, msg_modeled);
+
+					// Set completed to true
+					completed = true;
+				}
+				break;
+
+			default:
+				LOG_PRINT_ERROR("Unrecognized DirectoryState(%u)", curr_dstate);
+				break;
+			}
+		}
    }
 
    else // (!L2_cache_line_info->getCState() == CacheState::DATA_INVALID)
@@ -770,6 +826,13 @@ L2CacheCntlr::processShReqFromL1Cache(ShmemReq* shmem_req, Byte* data_buf, bool 
    ShL2CacheLineInfo L2_cache_line_info;
    getCacheLineInfo(address, &L2_cache_line_info, ShmemMsg::SH_REQ, requester, first_call);
  
+   //region owner must be the same as requester
+   bool region = L2_cache_line_info.getDirectoryEntry()->getDirectoryBlockInfo()->isRegion();
+   if (region)
+   {
+      assert(L2_cache_line_info.getDirectoryEntry()->getOwner() == requester);
+   }
+   
    assert(L2_cache_line_info.getCState() != CacheState::INVALID);
 
    // Is the request completely processed or waiting for acknowledgements or data?
@@ -783,98 +846,112 @@ L2CacheCntlr::processShReqFromL1Cache(ShmemReq* shmem_req, Byte* data_buf, bool 
       assert(directory_entry != NULL);
       DirectoryState::Type curr_dstate = directory_entry->getDirectoryBlockInfo()->getDState();
 
-      switch (curr_dstate)
-      {
-      case DirectoryState::MODIFIED:
-         {
-            LOG_ASSERT_ERROR(directory_entry->getOwner() != INVALID_TILE_ID,
-                             "Address(%#lx), State(MODIFIED), owner(INVALID)", address);
-            LOG_ASSERT_ERROR(L2_cache_line_info.getCachingComponent() == requester_mem_component,
-                             "caching component(%u), requester component(%u)",
-                             L2_cache_line_info.getCachingComponent(), requester_mem_component);
+      //hit a region
+		if(region)
+		{
+			assert(directory_entry->getOwner()==requester);
+			//add present bit vector and send SH_REP
+			tile_id_t req_present_bit = calcPresentBit(address);
+			assert(directory_entry->addSharer(req_present_bit));
+			readCacheLineAndSendToL1Cache(ShmemMsg::SH_REP, address, MemComponent::L1_DCACHE, data_buf, requester, msg_modeled);
+			completed = true;
+		}
+		else
+		{
+			switch (curr_dstate)
+			{
+			case DirectoryState::MODIFIED:
+				{
+					LOG_ASSERT_ERROR(directory_entry->getOwner() != INVALID_TILE_ID,
+										  "Address(%#lx), State(MODIFIED), owner(INVALID)", address);
+					LOG_ASSERT_ERROR(L2_cache_line_info.getCachingComponent() == requester_mem_component,
+										  "caching component(%u), requester component(%u)",
+										  L2_cache_line_info.getCachingComponent(), requester_mem_component);
 
-            ShmemMsg shmem_msg(ShmemMsg::WB_REQ, MemComponent::L2_CACHE, MemComponent::L1_DCACHE,
-                               requester, false, address,
-                               msg_modeled);
-            _memory_manager->sendMsg(directory_entry->getOwner(), shmem_msg);
-         }
-         break;
+					assert(directory_entry->getOwner() != requester);
+					ShmemMsg shmem_msg(ShmemMsg::WB_REQ, MemComponent::L2_CACHE, MemComponent::L1_DCACHE,
+											 requester, false, address,
+											 msg_modeled);
+					_memory_manager->sendMsg(directory_entry->getOwner(), shmem_msg);
+				}
+				break;
 
-      case DirectoryState::SHARED:
-         {
-            LOG_ASSERT_ERROR(directory_entry->getNumSharers() > 0, "Address(%#lx), State(%u), Num Sharers(%u)",
-                             address, curr_dstate, directory_entry->getNumSharers());
-            
-            if (L2_cache_line_info.getCachingComponent() != requester_mem_component)
-            {
-               assert(directory_entry->hasSharer(requester));
-               
-               // LOG_PRINT_WARNING("Address(%#lx) cached first in (%s), then in (%s)",
-               //                   address, SPELL_MEMCOMP(L2_cache_line_info.getCachingComponent()),
-               //                   SPELL_MEMCOMP(requester_mem_component));
-               L2_cache_line_info.setCachingComponent(MemComponent::L1_DCACHE);
-               
-               // Read the cache-line from the L2 cache and send it to L1
-               readCacheLineAndSendToL1Cache(ShmemMsg::SH_REP, address, requester_mem_component, data_buf, requester, msg_modeled);
-               // set completed to true 
-               completed = true;
-               break;
-            }
+			case DirectoryState::SHARED:
+				{
+					LOG_ASSERT_ERROR(directory_entry->getNumSharers() > 0, "Address(%#lx), State(%u), Num Sharers(%u)",
+										  address, curr_dstate, directory_entry->getNumSharers());
 
-            LOG_ASSERT_ERROR(L2_cache_line_info.getCachingComponent() == requester_mem_component,
-                             "Address(%#lx), Num sharers(%i), caching component(%u), requester component(%u)",
-                             address, directory_entry->getNumSharers(),
-                             L2_cache_line_info.getCachingComponent(), requester_mem_component);
+					if (L2_cache_line_info.getCachingComponent() != requester_mem_component)
+					{
+						assert(directory_entry->hasSharer(requester));
 
-            // Try to add the sharer to the sharer list
-            bool add_result = directory_entry->addSharer(requester);
-            if (add_result == false)
-            {
-               // Invalidate one sharer
-               tile_id_t sharer_id = directory_entry->getOneSharer();
+						// LOG_PRINT_WARNING("Address(%#lx) cached first in (%s), then in (%s)",
+						//                   address, SPELL_MEMCOMP(L2_cache_line_info.getCachingComponent()),
+						//                   SPELL_MEMCOMP(requester_mem_component));
+						L2_cache_line_info.setCachingComponent(MemComponent::L1_DCACHE);
 
-               // Invalidate the sharer
-               ShmemMsg shmem_msg(ShmemMsg::INV_REQ, MemComponent::L2_CACHE, requester_mem_component,
-                                  requester, false, address,
-                                  msg_modeled);
-               _memory_manager->sendMsg(sharer_id, shmem_msg);
-            }
-            else // succesfully added the sharer
-            {
-               // Read the cache-line from the L2 cache and send it to L1
-               readCacheLineAndSendToL1Cache(ShmemMsg::SH_REP, address, requester_mem_component, data_buf, requester, msg_modeled);
-            
-               // set completed to true 
-               completed = true; 
-            }
-         }
-         break;
+						// Read the cache-line from the L2 cache and send it to L1
+						readCacheLineAndSendToL1Cache(ShmemMsg::SH_REP, address, requester_mem_component, data_buf, requester, msg_modeled);
+						// set completed to true
+						completed = true;
+						break;
+					}
 
-      case DirectoryState::UNCACHED:
-         {
-            assert(directory_entry->getNumSharers() == 0);
-          
-            // Set caching component 
-            L2_cache_line_info.setCachingComponent(requester_mem_component);
-            
-            // Modifiy the directory entry contents
-            __attribute__((unused)) bool add_result = directory_entry->addSharer(requester);
-            LOG_ASSERT_ERROR(add_result, "Address(%#lx), Requester(%i), State(UNCACHED), Num Sharers(%u)",
-                             address, requester, directory_entry->getNumSharers());
-            directory_entry->getDirectoryBlockInfo()->setDState(DirectoryState::SHARED);
+					LOG_ASSERT_ERROR(L2_cache_line_info.getCachingComponent() == requester_mem_component,
+										  "Address(%#lx), Num sharers(%i), caching component(%u), requester component(%u)",
+										  address, directory_entry->getNumSharers(),
+										  L2_cache_line_info.getCachingComponent(), requester_mem_component);
 
-            // Read the cache-line from the L2 cache and send it to L1
-            readCacheLineAndSendToL1Cache(ShmemMsg::SH_REP, address, requester_mem_component, data_buf, requester, msg_modeled);
-       
-            // set completed to true 
-            completed = true; 
-         }
-         break;
+					// Try to add the sharer to the sharer list
+					bool add_result = directory_entry->addSharer(requester);
+					if (add_result == false)
+					{
+						// Invalidate one sharer
+						tile_id_t sharer_id = directory_entry->getOneSharer();
 
-      default:
-         LOG_PRINT_ERROR("Unsupported Directory State: %u", curr_dstate);
-         break;
-      }
+						// Invalidate the sharer
+						ShmemMsg shmem_msg(ShmemMsg::INV_REQ, MemComponent::L2_CACHE, requester_mem_component,
+												 requester, false, address,
+												 msg_modeled);
+						_memory_manager->sendMsg(sharer_id, shmem_msg);
+					}
+					else // succesfully added the sharer
+					{
+						// Read the cache-line from the L2 cache and send it to L1
+						readCacheLineAndSendToL1Cache(ShmemMsg::SH_REP, address, requester_mem_component, data_buf, requester, msg_modeled);
+
+						// set completed to true
+						completed = true;
+					}
+				}
+				break;
+
+			case DirectoryState::UNCACHED:
+				{
+					assert(directory_entry->getNumSharers() == 0);
+
+					// Set caching component
+					L2_cache_line_info.setCachingComponent(requester_mem_component);
+
+					// Modifiy the directory entry contents
+					__attribute__((unused)) bool add_result = directory_entry->addSharer(requester);
+					LOG_ASSERT_ERROR(add_result, "Address(%#lx), Requester(%i), State(UNCACHED), Num Sharers(%u)",
+										  address, requester, directory_entry->getNumSharers());
+					directory_entry->getDirectoryBlockInfo()->setDState(DirectoryState::SHARED);
+
+					// Read the cache-line from the L2 cache and send it to L1
+					readCacheLineAndSendToL1Cache(ShmemMsg::SH_REP, address, requester_mem_component, data_buf, requester, msg_modeled);
+
+					// set completed to true
+					completed = true;
+				}
+				break;
+
+			default:
+				LOG_PRINT_ERROR("Unsupported Directory State: %u", curr_dstate);
+				break;
+			}
+		}
    }
    
    else // (!L2_cache_line_info->getCState() == CacheState::DATA_INVALID)
@@ -901,20 +978,35 @@ L2CacheCntlr::processInvRepFromL1Cache(tile_id_t sender, const ShmemMsg* shmem_m
 
    DirectoryEntry* directory_entry = L2_cache_line_info->getDirectoryEntry();
    DirectoryState::Type curr_dstate = directory_entry->getDirectoryBlockInfo()->getDState();
+   bool region = directory_entry->getDirectoryBlockInfo()->isRegion();
   
    switch (curr_dstate)
    {
    case DirectoryState::SHARED:
-      LOG_ASSERT_ERROR((directory_entry->getOwner() == INVALID_TILE_ID) && (directory_entry->getNumSharers() > 0),
-                       "Address(%#lx), State(SHARED), sender(%i), num sharers(%u), owner(%i)",
-                       address, sender, directory_entry->getNumSharers(), directory_entry->getOwner());
+   	if(!region)
+   	{
+			LOG_ASSERT_ERROR((directory_entry->getOwner() == INVALID_TILE_ID) && (directory_entry->getNumSharers() > 0),
+								  "Address(%#lx), State(SHARED), sender(%i), num sharers(%u), owner(%i)",
+								  address, sender, directory_entry->getNumSharers(), directory_entry->getOwner());
 
-      // Remove the sharer and set the directory state to UNCACHED if the number of sharers is 0
-      directory_entry->removeSharer(sender, shmem_msg->isReplyExpected());
-      if (directory_entry->getNumSharers() == 0)
-      {
-         directory_entry->getDirectoryBlockInfo()->setDState(DirectoryState::UNCACHED);
-      }
+			// Remove the sharer and set the directory state to UNCACHED if the number of sharers is 0
+			directory_entry->removeSharer(sender, shmem_msg->isReplyExpected());
+   	}
+   	else
+   	{
+   		LOG_ASSERT_ERROR((directory_entry->getOwner() == sender) && (directory_entry->getNumSharers() > 0),
+   										  "Address(%#lx), State(SHARED), sender(%i), num sharers(%u), owner(%i)",
+   										  address, sender, directory_entry->getNumSharers(), directory_entry->getOwner());
+   		// Remove the sharer and set the directory state to UNCACHED if the number of sharers is 0
+         tile_id_t req_present_bit = calcPresentBit(address);
+			if(directory_entry->hasSharer(req_present_bit))
+				directory_entry->removeSharer(req_present_bit, false);
+   	}
+
+   	if (directory_entry->getNumSharers() == 0)
+		{
+			directory_entry->getDirectoryBlockInfo()->setDState(DirectoryState::UNCACHED);
+		}
       break;
 
    case DirectoryState::MODIFIED:

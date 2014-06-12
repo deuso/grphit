@@ -113,6 +113,7 @@ MemoryManager::MemoryManager(Tile* tile)
       sparse_directory_associativity = Sim()->getCfg()->getInt("sparse_directory/associativity");
       sparse_directory_max_num_sharers = Sim()->getConfig()->getTotalTiles();
       sparse_directory_max_hw_sharers = Sim()->getCfg()->getInt("sparse_directory/max_hw_sharers");
+      sparse_directory_region_size = Sim()->getCfg()->getInt("sparse_directory/region_size");
       sparse_directory_type_str = Sim()->getCfg()->getString("sparse_directory/directory_type");
       sparse_directory_access_cycles_str = Sim()->getCfg()->getString("sparse_directory/access_time");
 
@@ -189,6 +190,7 @@ MemoryManager::MemoryManager(Tile* tile)
    _L2_cache_cntlr = new L2CacheCntlr(this,
          _dram_home_lookup,
          getCacheLineSize(),
+         sparse_directory_region_size,//zl
          L2_cache_size,
          L2_cache_associativity,
          L2_cache_num_banks,

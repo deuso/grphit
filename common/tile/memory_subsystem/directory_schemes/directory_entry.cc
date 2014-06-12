@@ -109,3 +109,4 @@ DirectoryEntry::setOwner(tile_id_t owner_id)
       LOG_ASSERT_ERROR(hasSharer(owner_id), "Owner Id(%i) not a sharer", owner_id);
    _owner_id = owner_id;
 }
+
